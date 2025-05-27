@@ -45,6 +45,26 @@
       text-align: right;
       padding-right: 40px;
     }
+
+    .asteroid-preset {
+      display: inline-block;
+      margin: 2px;
+      padding: 2px 8px;
+      background-color: #e9ecef;
+      border-radius: 12px;
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid #dee2e6;
+    }
+
+    .asteroid-preset:hover {
+      background-color: #dee2e6;
+    }
+
+    .asteroid-preset.selected {
+      background-color: #0d6efd;
+      color: white;
+    }
   </style>
 
 </head>
@@ -156,9 +176,133 @@
               <div class="col-sm-7">
                 <select class="form-select myPadding" id="houseSystem" style="margin-left:5px;" required>
                   <option value="P">Placidus</option>
-                  <option value="O">Porphyrius</option>
+                  <option value="K">Koch</option>
+                  <option value="O">Porphyry</option>
+                  <option value="R">Regiomontanus</option>
+                  <option value="C">Campanus</option>
+                  <option value="A">Equal</option>
                   <option value="E">Equal</option>
+                  <option value="V">Equal/Vehlow</option>
+                  <option value="W">Equal/Whole Sign</option>
+                  <option value="M">Morinus</option>
+                  <option value="B">Alcabitius</option>
+                  <option value="T">Polich/Page (Topocentric)</option>
+                  <option value="S">Sripati</option>
+                  <option value="G">Gauquelin Sectors</option>
+                  <option value="H">Horizon/Azimut</option>
+                  <option value="X">Axial Rotation/Meridian</option>
+                  <option value="Y">APC Houses</option>
+                  <option value="L">Pullen SD</option>
+                  <option value="Q">Pullen SR</option>
+                  <option value="F">Carter Poli-Equ.</option>
+                  <option value="I">Sunshine</option>
+                  <option value="i">Sunshine/Alt.</option>
+                  <option value="J">Savard-A</option>
+                  <option value="U">Krusinski-Pisa-Goelzer</option>
+                  <option value="N">Equal/1=Aries</option>
+                  <option value="D">Equal (MC)</option>
                 </select>
+              </div>
+            </li>
+            <li class="list-group-item d-flex justify-content-between lh-sm">
+              <div class="col-sm-5">
+                <h6 class="my-0">Calculate Nodes</h6>
+                <small class="text-muted">Planetary nodes and apsides</small>
+              </div>
+              <div class="col-sm-7">
+                <div class="form-check" style="margin-top: 8px;">
+                  <input class="form-check-input" type="checkbox" id="calculateNodes" checked>
+                  <label class="form-check-label" for="calculateNodes">
+                    Include planetary nodes
+                  </label>
+                </div>
+              </div>
+            </li>
+            <li class="list-group-item d-flex justify-content-between lh-sm">
+              <div class="col-sm-5">
+                <h6 class="my-0">Node Method</h6>
+                <small class="text-muted">Calculation method for nodes</small>
+              </div>
+              <div class="col-sm-7">
+                <select class="form-select myPadding" id="nodeMethod" style="margin-left:5px;">
+                  <option value="0">Mean (Sun-Neptune), Osculating (Pluto+)</option>
+                  <option value="1">Osculating (All planets)</option>
+                  <option value="2">Barycentric Osculating (Outer planets)</option>
+                  <option value="4">Focal Points (instead of aphelia)</option>
+                </select>
+              </div>
+            </li>
+            <li class="list-group-item d-flex justify-content-between lh-sm">
+              <div class="col-sm-5">
+                <h6 class="my-0">Calculate Asteroids</h6>
+                <small class="text-muted">Include asteroid positions</small>
+              </div>
+              <div class="col-sm-7">
+                <div class="form-check" style="margin-top: 8px;">
+                  <input class="form-check-input" type="checkbox" id="calculateAsteroids">
+                  <label class="form-check-label" for="calculateAsteroids">
+                    Include asteroids
+                  </label>
+                </div>
+              </div>
+            </li>
+            <li class="list-group-item" id="asteroidOptions" style="display: none;">
+              <div>
+                <h6 class="my-0">Asteroid Selection</h6>
+                <small class="text-muted">Choose which asteroids to calculate</small>
+              </div>
+              <div class="mt-2">
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModePopular" value="popular" checked>
+                  <label class="form-check-label" for="asteroidModePopular">
+                    Popular 30 asteroids
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModeRange" value="range">
+                  <label class="form-check-label" for="asteroidModeRange">
+                    Range (e.g., 1-100)
+                  </label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModeCustom" value="custom">
+                  <label class="form-check-label" for="asteroidModeCustom">
+                    Custom list
+                  </label>
+                </div>
+              </div>
+              
+              <!-- Popular asteroids display -->
+              <div id="popularAsteroidsDiv" class="mt-3">
+                <div class="mb-2">
+                  <strong>Popular Asteroids:</strong>
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="selectAllAsteroids">Select All</button>
+                  <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="clearAllAsteroids">Clear All</button>
+                </div>
+                <div id="popularAsteroidsList">
+                  <!-- Will be populated by JavaScript -->
+                </div>
+              </div>
+
+              <!-- Range input -->
+              <div id="asteroidRangeDiv" class="mt-3" style="display: none;">
+                <div class="row">
+                  <div class="col-6">
+                    <label for="asteroidStart" class="form-label">Start:</label>
+                    <input type="number" class="form-control" id="asteroidStart" min="1" max="1000" value="1">
+                  </div>
+                  <div class="col-6">
+                    <label for="asteroidEnd" class="form-label">End:</label>
+                    <input type="number" class="form-control" id="asteroidEnd" min="1" max="1000" value="30">
+                  </div>
+                </div>
+              </div>
+
+              <!-- Custom list input -->
+              <div id="asteroidCustomDiv" class="mt-3" style="display: none;">
+                <label for="asteroidCustomList" class="form-label">Custom asteroid numbers (comma-separated):</label>
+                <textarea class="form-control" id="asteroidCustomList" rows="2" placeholder="1,2,3,4,433,1566,2060,3552"></textarea>
+                <small class="text-muted">Example: 1,2,3,4,433,1566 (max 100 asteroids)</small>
               </div>
             </li>
           </ul>

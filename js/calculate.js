@@ -9,6 +9,74 @@ $(document).ready(function () {
     $("#latM").val("27");
     $("#latS").val("40");
 
+    // 30 most popular asteroids with their numbers and names
+    const popularAsteroids = [
+        {num: 1, name: "Ceres"},
+        {num: 2, name: "Pallas"},
+        {num: 3, name: "Juno"},
+        {num: 4, name: "Vesta"},
+        {num: 5, name: "Astraea"},
+        {num: 6, name: "Hebe"},
+        {num: 7, name: "Iris"},
+        {num: 8, name: "Flora"},
+        {num: 9, name: "Metis"},
+        {num: 10, name: "Hygiea"},
+        {num: 11, name: "Parthenope"},
+        {num: 12, name: "Victoria"},
+        {num: 13, name: "Egeria"},
+        {num: 14, name: "Irene"},
+        {num: 15, name: "Eunomia"},
+        {num: 16, name: "Psyche"},
+        {num: 18, name: "Melpomene"},
+        {num: 19, name: "Fortuna"},
+        {num: 20, name: "Massalia"},
+        {num: 26, name: "Proserpina"},
+        {num: 28, name: "Bellona"},
+        {num: 29, name: "Amphitrite"},
+        {num: 31, name: "Euphrosyne"},
+        {num: 37, name: "Fides"},
+        {num: 39, name: "Laetitia"},
+        {num: 40, name: "Harmonia"},
+        {num: 41, name: "Daphne"},
+        {num: 42, name: "Isis"},
+        {num: 43, name: "Ariadne"},
+        {num: 44, name: "Nysa"}
+    ];
+
+    // Initialize popular asteroids display
+    initializePopularAsteroids(popularAsteroids);
+
+    // Enable/disable node method based on checkbox
+    $("#calculateNodes").on("change", function() {
+        $("#nodeMethod").prop("disabled", !this.checked);
+    });
+
+    // Show/hide asteroid options
+    $("#calculateAsteroids").on("change", function() {
+        if (this.checked) {
+            $("#asteroidOptions").show();
+        } else {
+            $("#asteroidOptions").hide();
+        }
+    });
+
+    // Handle asteroid mode changes
+    $("input[name='asteroidMode']").on("change", function() {
+        const mode = $(this).val();
+        $("#popularAsteroidsDiv").toggle(mode === "popular");
+        $("#asteroidRangeDiv").toggle(mode === "range");
+        $("#asteroidCustomDiv").toggle(mode === "custom");
+    });
+
+    // Select/clear all asteroids
+    $("#selectAllAsteroids").on("click", function() {
+        $(".asteroid-preset").addClass("selected");
+    });
+
+    $("#clearAllAsteroids").on("click", function() {
+        $(".asteroid-preset").removeClass("selected");
+    });
+
     $("#btnCalculate").on("click", function () {
         var jsonError = validateInput();
         if (jsonError.error === true) {
@@ -20,6 +88,7 @@ $(document).ready(function () {
         }
 
         var iYear, iMonth, iDay, iHour, iMinute, iSecond, iLonG, iLonM, iLonS, sLonEW, iLatG, iLatM, iLatS, sLatNS, sHouse;
+        var calculateNodes, nodeMethod, calculateAsteroids, asteroidData;
 
         var mDate = moment($("#initDate").val(), "YYYY-MM-DD");
         iYear = mDate.year();
@@ -41,15 +110,71 @@ $(document).ready(function () {
         sLatNS = $("#latNS").val();
 
         sHouse = $("#houseSystem").val();
+        calculateNodes = $("#calculateNodes").is(":checked");
+        nodeMethod = parseInt($("#nodeMethod").val(), 10);
+        calculateAsteroids = $("#calculateAsteroids").is(":checked");
+
+        // Prepare asteroid data
+        asteroidData = null;
+        if (calculateAsteroids) {
+            const asteroidMode = $("input[name='asteroidMode']:checked").val();
+            if (asteroidMode === "popular") {
+                const selectedAsteroids = [];
+                $(".asteroid-preset.selected").each(function() {
+                    selectedAsteroids.push($(this).data("asteroid-num"));
+                });
+                if (selectedAsteroids.length > 0) {
+                    asteroidData = {
+                        mode: "specific",
+                        list: selectedAsteroids.join(",")
+                    };
+                }
+            } else if (asteroidMode === "range") {
+                const start = parseInt($("#asteroidStart").val(), 10);
+                const end = parseInt($("#asteroidEnd").val(), 10);
+                if (start && end && start <= end) {
+                    asteroidData = {
+                        mode: "range",
+                        start: start,
+                        end: end
+                    };
+                }
+            } else if (asteroidMode === "custom") {
+                const customList = $("#asteroidCustomList").val().trim();
+                if (customList) {
+                    asteroidData = {
+                        mode: "specific",
+                        list: customList
+                    };
+                }
+            }
+        }
 
         var astrologer = new Worker("js/sweph.js");
-        astrologer.postMessage([iYear, iMonth, iDay, iHour, iMinute, iSecond, iLonG, iLonM, iLonS, sLonEW, iLatG, iLatM, iLatS, sLatNS, sHouse]);
+        astrologer.postMessage([
+            iYear, iMonth, iDay, iHour, iMinute, iSecond, 
+            iLonG, iLonM, iLonS, sLonEW, 
+            iLatG, iLatM, iLatS, sLatNS, 
+            sHouse, calculateNodes, nodeMethod, asteroidData
+        ]);
         astrologer.onmessage = function (response) {
+            console.log(response.data)
             var jsonResult = JSON.parse(response.data);
             var sResult = createResult(jsonResult);
             $("#resultDiv").html(sResult);
         };
     });
+
+    function initializePopularAsteroids(asteroids) {
+        const container = $("#popularAsteroidsList");
+        asteroids.forEach(function(asteroid) {
+            const element = $(`<span class="asteroid-preset selected" data-asteroid-num="${asteroid.num}">${asteroid.num} ${asteroid.name}</span>`);
+            element.on("click", function() {
+                $(this).toggleClass("selected");
+            });
+            container.append(element);
+        });
+    }
 });
 
 function validateInput() {
@@ -98,11 +223,57 @@ function validateInput() {
         jsonError.message = "Invalid latitude";
     }
 
+    // Asteroid validation
+    if ($("#calculateAsteroids").is(":checked")) {
+        const asteroidMode = $("input[name='asteroidMode']:checked").val();
+        if (asteroidMode === "popular") {
+            const selectedCount = $(".asteroid-preset.selected").length;
+            if (selectedCount === 0) {
+                jsonError.error = true;
+                jsonError.message = "Please select at least one asteroid";
+                return jsonError;
+            }
+        } else if (asteroidMode === "range") {
+            const start = parseInt($("#asteroidStart").val(), 10);
+            const end = parseInt($("#asteroidEnd").val(), 10);
+            if (isNaN(start) || isNaN(end) || start < 1 || end > 1000 || start > end) {
+                jsonError.error = true;
+                jsonError.message = "Invalid asteroid range";
+                return jsonError;
+            }
+        } else if (asteroidMode === "custom") {
+            const customList = $("#asteroidCustomList").val().trim();
+            if (!customList) {
+                jsonError.error = true;
+                jsonError.message = "Please enter asteroid numbers";
+                return jsonError;
+            }
+            // Validate custom list format
+            const numbers = customList.split(",");
+            if (numbers.length > 100) {
+                jsonError.error = true;
+                jsonError.message = "Too many asteroids (max 100)";
+                return jsonError;
+            }
+            for (let num of numbers) {
+                const parsed = parseInt(num.trim(), 10);
+                if (isNaN(parsed) || parsed < 1 || parsed > 1000) {
+                    jsonError.error = true;
+                    jsonError.message = "Invalid asteroid number: " + num.trim();
+                    return jsonError;
+                }
+            }
+        }
+    }
+
     return jsonError;
 }
 
 function createResult(jsonResult) {
     var sHtml = "";
+    
+    // Main planets table
+    sHtml = sHtml + "<h5>Planetary Positions</h5>";
     sHtml = sHtml + "<table class='myTable'><thead><tr><th>Planet</th><th>Longitude</th><th>Latitude</th><th>Distance</th><th>Speed</th></tr></thead>";
     sHtml = sHtml + "<tbody>";
     for (var i = 0; i < jsonResult.planets.length; i++) {
@@ -145,5 +316,119 @@ function createResult(jsonResult) {
         sHtml = sHtml + "</tr>";
     }
     sHtml = sHtml + "</tbody></table>";
+
+    // Asteroids table (if available)
+    if (jsonResult.asteroids && jsonResult.asteroids.asteroids && jsonResult.asteroids.asteroids.length > 0) {
+        sHtml = sHtml + "<br><h5>Asteroid Positions</h5>";
+        if (jsonResult.asteroids.summary) {
+            sHtml = sHtml + "<small class='text-muted'>Calculated: " + jsonResult.asteroids.summary.calculated + 
+                    ", Errors: " + jsonResult.asteroids.summary.errors + 
+                    " of " + jsonResult.asteroids.summary.total_requested + " requested</small>";
+        }
+        
+        sHtml = sHtml + "<table class='myTable mt-2'><thead><tr><th>Asteroid</th><th>Longitude</th><th>Latitude</th><th>Distance (AU)</th><th>Speed</th></tr></thead>";
+        sHtml = sHtml + "<tbody>";
+        
+        for (var i = 0; i < jsonResult.asteroids.asteroids.length; i++) {
+            var asteroid = jsonResult.asteroids.asteroids[i];
+            sHtml = sHtml + "<tr>";
+            if (asteroid.error) {
+                sHtml = sHtml + "<td>" + asteroid.name + " (" + asteroid.index + ")</td>";
+                sHtml = sHtml + "<td colspan='4' class='text-danger'>Error: " + (asteroid.error_msg || "Calculation failed") + "</td>";
+            } else {
+                sHtml = sHtml + "<td>" + asteroid.name + " (" + asteroid.index + ")</td>";
+                sHtml = sHtml + "<td>" + asteroid.long_s + "</td>";
+                sHtml = sHtml + "<td>" + asteroid.lat.toFixed(4) + "°</td>";
+                sHtml = sHtml + "<td>" + asteroid.distance.toFixed(4) + "</td>";
+                sHtml = sHtml + "<td>" + asteroid.speed.toFixed(4) + "°/day</td>";
+            }
+            sHtml = sHtml + "</tr>";
+        }
+        sHtml = sHtml + "</tbody></table>";
+    }
+
+    // Planetary nodes table (if available)
+    if (jsonResult.nodes && jsonResult.nodes.nodes && jsonResult.nodes.nodes.length > 0) {
+        sHtml = sHtml + "<br><h5>Planetary Nodes & Apsides</h5>";
+        sHtml = sHtml + "<small class='text-muted'>Method: " + getNodeMethodName(jsonResult.nodes.method) + "</small>";
+        
+        // Create tabs for different node types
+        sHtml = sHtml + "<ul class='nav nav-tabs mt-2' id='nodesTabs' role='tablist'>";
+        sHtml = sHtml + "<li class='nav-item' role='presentation'>";
+        sHtml = sHtml + "<button class='nav-link active' id='ascending-tab' data-bs-toggle='tab' data-bs-target='#ascending' type='button' role='tab'>Ascending Nodes</button>";
+        sHtml = sHtml + "</li>";
+        sHtml = sHtml + "<li class='nav-item' role='presentation'>";
+        sHtml = sHtml + "<button class='nav-link' id='descending-tab' data-bs-toggle='tab' data-bs-target='#descending' type='button' role='tab'>Descending Nodes</button>";
+        sHtml = sHtml + "</li>";
+        sHtml = sHtml + "<li class='nav-item' role='presentation'>";
+        sHtml = sHtml + "<button class='nav-link' id='perihelion-tab' data-bs-toggle='tab' data-bs-target='#perihelion' type='button' role='tab'>Perihelion</button>";
+        sHtml = sHtml + "</li>";
+        sHtml = sHtml + "<li class='nav-item' role='presentation'>";
+        sHtml = sHtml + "<button class='nav-link' id='aphelion-tab' data-bs-toggle='tab' data-bs-target='#aphelion' type='button' role='tab'>Aphelion</button>";
+        sHtml = sHtml + "</li>";
+        sHtml = sHtml + "</ul>";
+
+        sHtml = sHtml + "<div class='tab-content' id='nodesTabContent'>";
+        
+        // Ascending nodes tab
+        sHtml = sHtml + "<div class='tab-pane fade show active' id='ascending' role='tabpanel'>";
+        sHtml = sHtml + createNodesTable(jsonResult.nodes.nodes, 'ascending_node');
+        sHtml = sHtml + "</div>";
+
+        // Descending nodes tab
+        sHtml = sHtml + "<div class='tab-pane fade' id='descending' role='tabpanel'>";
+        sHtml = sHtml + createNodesTable(jsonResult.nodes.nodes, 'descending_node');
+        sHtml = sHtml + "</div>";
+
+        // Perihelion tab
+        sHtml = sHtml + "<div class='tab-pane fade' id='perihelion' role='tabpanel'>";
+        sHtml = sHtml + createNodesTable(jsonResult.nodes.nodes, 'perihelion');
+        sHtml = sHtml + "</div>";
+
+        // Aphelion tab
+        sHtml = sHtml + "<div class='tab-pane fade' id='aphelion' role='tabpanel'>";
+        sHtml = sHtml + createNodesTable(jsonResult.nodes.nodes, 'aphelion');
+        sHtml = sHtml + "</div>";
+
+        sHtml = sHtml + "</div>";
+    }
+
     return sHtml;
+}
+
+function createNodesTable(nodes, nodeType) {
+    var sHtml = "";
+    sHtml = sHtml + "<table class='myTable mt-2'><thead><tr><th>Planet</th><th>Longitude</th><th>Latitude</th><th>Distance (AU)</th><th>Speed Long</th><th>Speed Lat</th></tr></thead>";
+    sHtml = sHtml + "<tbody>";
+    
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i].error) {
+            sHtml = sHtml + "<tr>";
+            sHtml = sHtml + "<td>" + nodes[i].name + "</td>";
+            sHtml = sHtml + "<td colspan='5' class='text-danger'>Error: " + (nodes[i].error_msg || "Calculation failed") + "</td>";
+            sHtml = sHtml + "</tr>";
+        } else {
+            var nodeData = nodes[i][nodeType];
+            sHtml = sHtml + "<tr>";
+            sHtml = sHtml + "<td>" + nodes[i].name + "</td>";
+            sHtml = sHtml + "<td>" + nodeData.long_s + "</td>";
+            sHtml = sHtml + "<td>" + nodeData.lat.toFixed(6) + "°</td>";
+            sHtml = sHtml + "<td>" + nodeData.distance.toFixed(6) + "</td>";
+            sHtml = sHtml + "<td>" + nodeData.speed_long.toFixed(6) + "°/day</td>";
+            sHtml = sHtml + "<td>" + nodeData.speed_lat.toFixed(6) + "°/day</td>";
+            sHtml = sHtml + "</tr>";
+        }
+    }
+    sHtml = sHtml + "</tbody></table>";
+    return sHtml;
+}
+
+function getNodeMethodName(method) {
+    switch(method) {
+        case 0: return "Mean (Sun-Neptune), Osculating (Pluto+)";
+        case 1: return "Osculating (All planets)";
+        case 2: return "Barycentric Osculating (Outer planets)";
+        case 4: return "Focal Points (instead of aphelia)";
+        default: return "Unknown method";
+    }
 }
