@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Astro-Sweph NPM Package Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .result { background: #f5f5f5; padding: 20px; margin: 20px 0; }
+        .error { color: red; }
+        button { padding: 10px 20px; margin: 10px 0; }
+        .loading { color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Astro-Sweph NPM Package Test</h1>
+    
+    <div id="status" class="loading">Loading AstroSweph...</div>
+    
+    <div id="controls" style="display: none;">
+        <button onclick="runTest()">Run Calculation Test</button>
+        <button onclick="runAsteroidTest()">Test with Asteroids</button>
+        <button onclick="runNodesTest()">Test with Nodes</button>
+    </div>
+    
+    <div id="result"></div>
+
+    <!-- Load the AstroSweph package -->
+    <script src="/astro-sweph/index.js"></script>
+    <script>
+        let astroSweph = null;
+
+        // Initialize when page loads
+        window.addEventListener('load', async function() {
+            try {
+                if (typeof AstroSweph === 'undefined') {
+                    throw new Error('AstroSweph class not found. Make sure the package loaded correctly.');
+                }
+                
+                document.getElementById('status').textContent = 'Initializing AstroSweph...';
+                
+                // Create AstroSweph with custom base path for the test server
+                astroSweph = new AstroSweph({ basePath: '/astro-sweph/' });
+                await astroSweph.initialize();
+                
+                document.getElementById('status').textContent = 'AstroSweph ready!';
+                document.getElementById('status').className = '';
+                document.getElementById('controls').style.display = 'block';
+                
+                console.log('AstroSweph initialized successfully');
+            } catch (error) {
+                document.getElementById('status').textContent = 'Failed to initialize: ' + error.message;
+                document.getElementById('status').className = 'error';
+                console.error('Initialization error:', error);
+            }
+        });
+
+        async function ensureInitialized() {
+            if (!astroSweph) {
+                throw new Error('AstroSweph not initialized');
+            }
+            return astroSweph;
+        }
+
+        async function runTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Running basic calculation...</p>';
+
+            try {
+                await ensureInitialized();
+
+                const params = {
+                    year: 2024,
+                    month: 1,
+                    day: 15,
+                    hour: 12,
+                    minute: 0,
+                    second: 0,
+                    lonG: 9,
+                    lonM: 9,
+                    lonS: 34,
+                    lonEW: 'E',
+                    latG: 45,
+                    latM: 27,
+                    latS: 40,
+                    latNS: 'N',
+                    houseSystem: 'P'
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Basic Calculation Result:</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Test error:', error);
+            }
+        }
+
+        async function runAsteroidTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Calculating with asteroids...</p>';
+
+            try {
+                await ensureInitialized();
+
+                const params = {
+                    year: 2024,
+                    month: 1,
+                    day: 15,
+                    hour: 12,
+                    minute: 0,
+                    second: 0,
+                    lonG: 9,
+                    lonM: 9,
+                    lonS: 34,
+                    lonEW: 'E',
+                    latG: 45,
+                    latM: 27,
+                    latS: 40,
+                    latNS: 'N',
+                    houseSystem: 'P',
+                    asteroidData: {
+                        mode: 'specific',
+                        list: '1,2,3,4,5'
+                    }
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Calculation with Asteroids:</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Asteroid test error:', error);
+            }
+        }
+
+        async function runNodesTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Calculating with nodes...</p>';
+
+            try {
+                await ensureInitialized();
+
+                const params = {
+                    year: 2024,
+                    month: 1,
+                    day: 15,
+                    hour: 12,
+                    minute: 0,
+                    second: 0,
+                    lonG: 9,
+                    lonM: 9,
+                    lonS: 34,
+                    lonEW: 'E',
+                    latG: 45,
+                    latM: 27,
+                    latS: 40,
+                    latNS: 'N',
+                    houseSystem: 'P',
+                    calculateNodes: true,
+                    nodeMethod: 0
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Calculation with Nodes:</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Nodes test error:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

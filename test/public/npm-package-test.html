@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NPM Package Test - Astro-Sweph</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .result { background: #f5f5f5; padding: 20px; margin: 20px 0; }
+        .error { color: red; }
+        button { padding: 10px 20px; margin: 10px 0; }
+        .loading { color: #666; font-style: italic; }
+        .success { color: green; }
+        .info { background: #e8f5e9; padding: 10px; margin: 10px 0; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>NPM Package Test - Astro-Sweph</h1>
+    <div class="info">Testing with installed npm package (real-world scenario)</div>
+    
+    <div id="status" class="loading">Loading AstroSweph...</div>
+    
+    <div id="controls" style="display: none;">
+        <button onclick="runTest()">Run Calculation Test</button>
+        <button onclick="runAsteroidTest()">Test with Asteroids</button>
+        <button onclick="runNodesTest()">Test with Nodes</button>
+    </div>
+    
+    <div id="result"></div>
+
+    <!-- Load from npm package files -->
+    <script src="/npm-package/index.js"></script>
+    <script>
+        let astroSweph = null;
+
+        window.addEventListener('load', async function() {
+            try {
+                if (typeof AstroSweph === 'undefined') {
+                    throw new Error('AstroSweph class not found. Run "npm run setup-npm" first.');
+                }
+                
+                document.getElementById('status').textContent = 'Initializing AstroSweph...';
+                
+                astroSweph = new AstroSweph({ basePath: '/npm-package/' });
+                await astroSweph.initialize();
+                
+                document.getElementById('status').textContent = 'AstroSweph ready! (NPM Package)';
+                document.getElementById('status').className = 'success';
+                document.getElementById('controls').style.display = 'block';
+                
+                console.log('AstroSweph initialized successfully from npm package');
+            } catch (error) {
+                document.getElementById('status').textContent = 'Failed to initialize: ' + error.message;
+                document.getElementById('status').className = 'error';
+                console.error('Initialization error:', error);
+            }
+        });
+
+        // Same test functions as above, but with "NPM Package" labels
+        async function ensureInitialized() {
+            if (!astroSweph) {
+                throw new Error('AstroSweph not initialized');
+            }
+            return astroSweph;
+        }
+
+        async function runTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Running basic calculation...</p>';
+
+            try {
+                await ensureInitialized();
+                const params = {
+                    year: 2024, month: 1, day: 15, hour: 12, minute: 0, second: 0,
+                    lonG: 9, lonM: 9, lonS: 34, lonEW: 'E',
+                    latG: 45, latM: 27, latS: 40, latNS: 'N',
+                    houseSystem: 'P'
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Basic Calculation Result (NPM Package):</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Test error:', error);
+            }
+        }
+
+        async function runAsteroidTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Calculating with asteroids...</p>';
+
+            try {
+                await ensureInitialized();
+                const params = {
+                    year: 2024, month: 1, day: 15, hour: 12, minute: 0, second: 0,
+                    lonG: 9, lonM: 9, lonS: 34, lonEW: 'E',
+                    latG: 45, latM: 27, latS: 40, latNS: 'N',
+                    houseSystem: 'P',
+                    asteroidData: { mode: 'specific', list: '1,2,3,4,5' }
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Asteroid Test Result (NPM Package):</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Asteroid test error:', error);
+            }
+        }
+
+        async function runNodesTest() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '<p class="loading">Calculating with nodes...</p>';
+
+            try {
+                await ensureInitialized();
+                const params = {
+                    year: 2024, month: 1, day: 15, hour: 12, minute: 0, second: 0,
+                    lonG: 9, lonM: 9, lonS: 34, lonEW: 'E',
+                    latG: 45, latM: 27, latS: 40, latNS: 'N',
+                    houseSystem: 'P',
+                    calculateNodes: true, nodeMethod: 0
+                };
+
+                const result = astroSweph.calculate(params);
+                resultDiv.innerHTML = '<h3>Nodes Test Result (NPM Package):</h3><pre>' + 
+                    JSON.stringify(result, null, 2) + '</pre>';
+            } catch (error) {
+                resultDiv.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error('Nodes test error:', error);
+            }
+        }
+    </script>
+</body>
+</html> 

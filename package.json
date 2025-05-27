@@ -1,0 +1,29 @@
+{
+  "name": "astro-sweph",
+  "version": "1.0.0",
+  "description": "Swiss Ephemeris (Sweph) compiled to WebAssembly for browser and Node.js",
+  "main": "dist/index.js",
+  "browser": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node scripts/build.js",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "astrology",
+    "ephemeris",
+    "swiss-ephemeris",
+    "wasm",
+    "webassembly"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "copyfiles": "^2.4.1",
+    "mkdirp": "^1.0.4"
+  }
+} 
