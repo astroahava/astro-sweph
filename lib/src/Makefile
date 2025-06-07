@@ -1,61 +1,95 @@
-# $Header$
-# this Makefile creates a SwissEph library and a swetest sample on 64-bit
-# Redhat Enterprise Linux RHEL 6.
+# Swiss Ephemeris WebAssembly Build
+# Optimized for single-file deployment with all ephemeris data embedded
 
-# The mode marked as 'Linux' should also work with the GNU C compiler
-# gcc on other systems.
+CC = emcc
+CFLAGS = -Wall -fPIC -O2 -DUSECASE=2 -I../sweph/src
+CFLAGS_RELEASE = -Wall -fPIC -O3 -DUSECASE=2 -DNDEBUG -I../sweph/src
+LIBS = -lm -ldl
 
-# If you modify this makefile for another compiler, please
-# let us know. We would like to add as many variations as possible.
-# If you get warnings and error messages from your compiler, please
-# let us know. We like to fix the source code so that it compiles
-# free of warnings.
-# send email to the Swiss Ephemeris mailing list.
-#
+# Default target
+all: astro-embedded
 
-CFLAGS = -g -Wall -fPIC -O2 -DUSECASE=2 # for Linux and other gcc systems
-OP=$(CFLAGS)
-CC=emcc	#for Linux
+# Object files
+astro.o: astro.c
+	$(CC) $(CFLAGS) -c astro.c -o astro.o
 
-# compilation rule for general cases
-.o :
-	$(CC) $(OP) -o $@ $? -lm
-.c.o:
-	$(CC) -c $(OP) $<
+astro-release.o: astro.c
+	$(CC) $(CFLAGS_RELEASE) -c astro.c -o astro-release.o
 
-SWEOBJ = swedate.o swehouse.o swejpl.o swemmoon.o swemplan.o sweph.o\
-	 swephlib.o swecl.o swehel.o
+# Swiss Ephemeris library
+libswe.a:
+	$(MAKE) -C ../sweph/src libswe.a CC="$(CC)" CFLAGS="$(CFLAGS)"
+	cp ../sweph/src/libswe.a .
 
-astro: astro.o libswe.a
-	$(CC) $(OP) --preload-file eph -o astro.js astro.o -s WASM=1 -s  EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]' -L. -lswe -lm -ldl
+libswe-release.a:
+	$(MAKE) -C ../sweph/src libswe.a CC="$(CC)" CFLAGS="$(CFLAGS_RELEASE)"
+	cp ../sweph/src/libswe.a libswe-release.a
 
-install:
-	# mv astro.js ../../js/; mv astro.wasm ../../js/; mv astro.wast ../../js/
-	mv astro.js ../../js/; mv astro.wasm ../../js/; mv astro.data ../../js/
+# Single file embedded build (RECOMMENDED)
+# Embeds all 49 ephemeris files into a single JavaScript file with maximum compression
+astro-embedded: astro-release.o libswe-release.a
+	@echo "Building ultra-compressed single file with all ephemeris files embedded..."
+	@echo "Ephemeris data size: $$(du -sh eph/)"
+	@echo "Embedding $$(find eph -name "*.se1" | wc -l) ephemeris files..."
+	$(CC) $(CFLAGS_RELEASE) astro-release.o \
+		$(shell find eph -name "*.se1" -exec echo "--embed-file {}" \;) \
+		-o astro-embedded.js \
+		-s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString", "stringToUTF8", "lengthBytesUTF8"]' \
+		-s EXPORTED_FUNCTIONS='["_test", "_get", "_getPlanets", "_getHouses", "_degreesToDMS", "_getJulianDay", "_getPlanet", "_getPlanetaryNodes", "_getSinglePlanetNodes", "_getAsteroids", "_getSpecificAsteroids", "_setEphemerisPath", "_getEphemerisInfo", "_freeMemory", "_malloc", "_free"]' \
+		-s WASM_ASYNC_COMPILATION=0 \
+		-s FORCE_FILESYSTEM=1 -s SINGLE_FILE=1 \
+		-O1 \
+		-s TEXTDECODER=0 \
+		-s ABORTING_MALLOC=0 \
+		-s ALLOW_MEMORY_GROWTH=0 \
+		-s INITIAL_MEMORY=67108864 \
+		-s STACK_SIZE=1048576 \
+		-s NO_EXIT_RUNTIME=1 \
+		-s ASSERTIONS=0 \
+		-s DISABLE_EXCEPTION_CATCHING=1 \
+		-s FILESYSTEM=1 \
+		-s SUPPORT_LONGJMP=0 \
+		-s LZ4=1 \
+		-L. -lswe-release $(LIBS)
+	@echo "✅ Ultra-compressed single file build complete:"
+	@ls -lh astro-embedded.js
+	@echo "✅ No separate .wasm or .data files needed"
+	@echo "✅ Ready for deployment"
 
-# create an archive and a dynamic link libary fro SwissEph
-# a user of this library will inlcude swephexp.h  and link with -lswe
 
-libswe.a: $(SWEOBJ)
-	ar r libswe.a	$(SWEOBJ)
 
-libswe.so: $(SWEOBJ)
-	$(CC) -shared -o libswe.so $(SWEOBJ)
+# Install to js directory
+install: astro-embedded
+	@echo "Installing to js directory..."
+	mv astro-embedded.js ../../js/
+	@echo "✅ Installed: js/astro-embedded.js ($$(du -sh ../../js/astro-embedded.js | cut -f1))"
 
+
+
+# Development build (for testing, creates separate files)
+astro-dev: astro.o libswe.a
+	@echo "Building development version..."
+	$(CC) $(CFLAGS) --preload-file eph -o astro-dev.js astro.o \
+		-s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]' \
+		-s FORCE_FILESYSTEM=1 -L. -lswe $(LIBS)
+	@echo "Development build complete (separate .js/.wasm/.data files)"
+
+# Clean build artifacts
 clean:
-	rm -f *.o *.wasm *.wast *.js *.html astro libswe*; rm ../../js/astro.*
+	rm -f *.o *.a *.js *.wasm *.data *.br *.xz
+	rm -rf eph-*
 
-###
-swecl.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-sweclips.o: sweodef.h swephexp.h swedll.h
-swedate.o: swephexp.h sweodef.h swedll.h
-swehel.o: swephexp.h sweodef.h swedll.h
-swehouse.o: swephexp.h sweodef.h swedll.h swephlib.h swehouse.h
-swejpl.o: swephexp.h sweodef.h swedll.h sweph.h swejpl.h
-swemini.o: swephexp.h sweodef.h swedll.h
-swemmoon.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h
-swemplan.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h swemptab.h
-## swepcalc.o: swepcalc.h swephexp.h sweodef.h swedll.h
-sweph.o: swejpl.h sweodef.h swephexp.h swedll.h sweph.h swephlib.h
-swephlib.o: swephexp.h sweodef.h swedll.h sweph.h swephlib.h
-## swetest.o: swephexp.h sweodef.h swedll.h
+# Show build information
+info:
+	@echo "=== Swiss Ephemeris WASM Build Information ==="
+	@echo "Ephemeris files: $$(find eph -name "*.se1" | wc -l)"
+	@echo "Ephemeris size: $$(du -sh eph/)"
+	@echo ""
+	@echo "Available targets:"
+	@echo "  astro-embedded       - Single file with all ephemeris data (RECOMMENDED)"
+	@echo "  astro-dev           - Development build with separate files"
+	@echo "  install             - Install embedded version to js/"
+	@echo "  clean               - Clean build artifacts"
+	@echo "  info                - Show this information"
+
+.PHONY: all install clean info 

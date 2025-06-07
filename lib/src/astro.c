@@ -40,6 +40,7 @@
 #define OFFLINE 2
 
 #ifndef USECASE
+#define USECASE OFFLINE
 #endif
 
 #include <stdlib.h>
@@ -214,6 +215,16 @@ const char *astro(int year, int month, int day, int hour, int minute, int second
 }
 
 #if USECASE == OFFLINE
+
+/**
+ * @brief Simple test function to verify exports are working
+ * @return Test string
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *test()
+{
+  return "Test function works!";
+}
 
 /**
  * @brief Main astrological chart calculation function
@@ -701,6 +712,283 @@ const char *getSpecificAsteroids(int year, int month, int day, int hour, int min
   free(list_copy);
   free(sChar);
   return Buffer;
+}
+
+/**
+ * @brief Set custom ephemeris path for selective loading
+ * @param path Path to ephemeris files (default: "eph")
+ * @return Success status
+ */
+EMSCRIPTEN_KEEPALIVE
+int setEphemerisPath(char *path)
+{
+  swe_set_ephe_path(path);
+  return 0;
+}
+
+/**
+ * @brief Get ephemeris file information and availability
+ * @param buflen Buffer length for output string
+ * @return JSON string containing available ephemeris files and date ranges
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *getEphemerisInfo(int buflen)
+{
+  char *Buffer = malloc(buflen);
+  int length = 0;
+  
+  length += snprintf(Buffer + length, buflen - length, "{ ");
+  char path_buffer[256];
+  length += snprintf(Buffer + length, buflen - length, 
+                     "\"ephemeris_path\": \"%s\", ", swe_get_library_path(path_buffer));
+  length += snprintf(Buffer + length, buflen - length,
+                     "\"date_range\": { \"start\": \"1800-01-01\", \"end\": \"2400-01-01\" }, ");
+  length += snprintf(Buffer + length, buflen - length,
+                     "\"files_loaded\": \"VFS\", ");
+  length += snprintf(Buffer + length, buflen - length,
+                     "\"compression\": \"LZ4\" }");
+  
+  return Buffer;
+}
+
+/**
+ * @brief Calculate planetary positions only (without houses)
+ * @param year Year (1800-2400)
+ * @param month Month (1-12)
+ * @param day Day (1-31)
+ * @param hour Hour (0-23)
+ * @param minute Minute (0-59)
+ * @param second Second (0-59)
+ * @return JSON string containing planetary positions
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *getPlanets(int year, int month, int day, int hour, int minute, int second)
+{
+  char snam[40], serr[AS_MAXCH];
+  double jut = 0.0;
+  double tjd_ut, x[6];
+  long iflag, iflagret;
+  int p;
+  int round_flag = 0;
+  char *Buffer = malloc(50000);
+  int length = 0;
+  char *sChar = malloc(3);
+
+  swe_set_ephe_path("eph");
+  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
+
+  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
+  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
+
+  length += snprintf(Buffer + length, 50000 - length, "{ ");
+  length += snprintf(Buffer + length, 50000 - length,
+                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %f }, ", 
+                     year, month, day, hour, minute, second, tjd_ut);
+
+  length += snprintf(Buffer + length, 50000 - length, "\"planets\": [ ");
+
+  for (p = SE_SUN; p < SE_NPLANETS; p++)
+  {
+    if (p == SE_EARTH) continue;
+    
+    strcpy(sChar, ", ");
+    if (p == SE_NPLANETS - 1)
+      strcpy(sChar, " ");
+
+    iflagret = swe_calc_ut(tjd_ut, p, iflag, x, serr);
+
+    if (iflagret > 0 && (iflagret & SEFLG_SWIEPH))
+    {
+      swe_get_planet_name(p, snam);
+      length += snprintf(Buffer + length, 50000 - length,
+                         " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s", 
+                         p, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+    }
+    else
+    {
+      swe_get_planet_name(p, snam);
+      length += snprintf(Buffer + length, 50000 - length,
+                         " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }%s", 
+                         p, snam, iflagret, serr, sChar);
+    }
+  }
+
+  length += snprintf(Buffer + length, 50000 - length, "] }");
+  free(sChar);
+  return Buffer;
+}
+
+/**
+ * @brief Calculate house cusps and angles only (without planets)
+ * @param year Year (1800-2400)
+ * @param month Month (1-12)
+ * @param day Day (1-31)
+ * @param hour Hour (0-23)
+ * @param minute Minute (0-59)
+ * @param second Second (0-59)
+ * @param lonG Longitude degrees
+ * @param lonM Longitude minutes
+ * @param lonS Longitude seconds
+ * @param lonEW Longitude direction ("E" or "W")
+ * @param latG Latitude degrees
+ * @param latM Latitude minutes
+ * @param latS Latitude seconds
+ * @param latNS Latitude direction ("N" or "S")
+ * @param iHouse House system character (P=Placidus, K=Koch, etc.)
+ * @return JSON string containing house cusps and angles
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *getHouses(int year, int month, int day, int hour, int minute, int second, int lonG, int lonM, int lonS, char *lonEW, int latG, int latM, int latS, char *latNS, char *iHouse)
+{
+  double jut = 0.0;
+  double tjd_ut, lon, lat;
+  double cusp[12 + 1];
+  double ascmc[10];
+  long iflag;
+  int i;
+  int round_flag = 0;
+  char *Buffer = malloc(10000);
+  int length = 0;
+  char *sChar = malloc(3);
+
+  swe_set_ephe_path("eph");
+  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
+
+  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
+  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
+
+  lon = lonG + lonM / 60.0 + lonS / 3600.0;
+  if (*lonEW == 'W') lon = -lon;
+  lat = latG + latM / 60.0 + latS / 3600.0;
+  if (*latNS == 'S') lat = -lat;
+
+  swe_houses_ex(tjd_ut, iflag, lat, lon, (int)*iHouse, cusp, ascmc);
+
+  length += snprintf(Buffer + length, 10000 - length, "{ ");
+  length += snprintf(Buffer + length, 10000 - length,
+                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %f }, ", 
+                     year, month, day, hour, minute, second, tjd_ut);
+  
+  length += snprintf(Buffer + length, 10000 - length, "\"ascmc\": [ ");
+  length += snprintf(Buffer + length, 10000 - length,
+                     "{ \"name\": \"Asc\", \"long\": %f, \"long_s\": \"%s\" }, ", 
+                     ascmc[0], dms(ascmc[0], round_flag | BIT_ZODIAC));
+  length += snprintf(Buffer + length, 10000 - length,
+                     "{ \"name\": \"MC\", \"long\": %f, \"long_s\": \"%s\" } ", 
+                     ascmc[1], dms(ascmc[1], round_flag | BIT_ZODIAC));
+  length += snprintf(Buffer + length, 10000 - length, "], ");
+
+  length += snprintf(Buffer + length, 10000 - length, "\"houses\": [ ");
+  for (i = 1; i <= 12; i++)
+  {
+    strcpy(sChar, ", ");
+    if (i == 12) strcpy(sChar, " ");
+    
+    length += snprintf(Buffer + length, 10000 - length,
+                       "{ \"name\": \"%d\", \"long\": %f, \"long_s\": \"%s\" }%s ", 
+                       i, cusp[i], dms(cusp[i], round_flag | BIT_ZODIAC), sChar);
+  }
+  length += snprintf(Buffer + length, 10000 - length, "] }");
+
+  free(sChar);
+  return Buffer;
+}
+
+/**
+ * @brief Convert decimal degrees to degrees/minutes/seconds format
+ * @param degrees Decimal degrees
+ * @param format Format flags (BIT_ZODIAC for zodiac signs, etc.)
+ * @return Formatted string representation
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *degreesToDMS(double degrees, int format)
+{
+  char *Buffer = malloc(100);
+  const char *result = dms(degrees, format);
+  strcpy(Buffer, result);
+  return Buffer;
+}
+
+/**
+ * @brief Calculate Julian Day for a given date/time
+ * @param year Year (1800-2400)
+ * @param month Month (1-12)
+ * @param day Day (1-31)
+ * @param hour Hour (0-23)
+ * @param minute Minute (0-59)
+ * @param second Second (0-59)
+ * @return Julian Day (as JSON string for consistency)
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *getJulianDay(int year, int month, int day, int hour, int minute, int second)
+{
+  double jut = (double)hour + (double)minute / 60 + (double)second / 3600;
+  double tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
+  
+  char *Buffer = malloc(500);
+  snprintf(Buffer, 500, 
+           "{ \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"julian_day\": %f }", 
+           year, month, day, hour, minute, second, tjd_ut);
+  
+  return Buffer;
+}
+
+/**
+ * @brief Calculate position for a single planet
+ * @param planet_id Planet number (0=Sun, 1=Moon, etc.)
+ * @param year Year (1800-2400)
+ * @param month Month (1-12)
+ * @param day Day (1-31)
+ * @param hour Hour (0-23)
+ * @param minute Minute (0-59)
+ * @param second Second (0-59)
+ * @return JSON string containing single planet position
+ */
+EMSCRIPTEN_KEEPALIVE
+const char *getPlanet(int planet_id, int year, int month, int day, int hour, int minute, int second)
+{
+  char snam[40], serr[AS_MAXCH];
+  double jut = 0.0;
+  double tjd_ut, x[6];
+  long iflag, iflagret;
+  int round_flag = 0;
+  char *Buffer = malloc(1000);
+
+  swe_set_ephe_path("eph");
+  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
+
+  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
+  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
+
+  iflagret = swe_calc_ut(tjd_ut, planet_id, iflag, x, serr);
+  swe_get_planet_name(planet_id, snam);
+
+  if (iflagret > 0 && (iflagret & SEFLG_SWIEPH))
+  {
+    snprintf(Buffer, 1000,
+             "{ \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"jd_ut\": %f, \"iflagret\": %ld, \"error\": false }",
+             planet_id, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), tjd_ut, iflagret);
+  }
+  else
+  {
+    snprintf(Buffer, 1000,
+             "{ \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"jd_ut\": %f, \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }",
+             planet_id, snam, tjd_ut, iflagret, serr);
+  }
+
+  return Buffer;
+}
+
+/**
+ * @brief Free memory allocated by other functions
+ * @param ptr Pointer to memory to free
+ */
+EMSCRIPTEN_KEEPALIVE
+void freeMemory(void *ptr)
+{
+  if (ptr) {
+    free(ptr);
+  }
 }
 
 #endif

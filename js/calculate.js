@@ -9,12 +9,8 @@ $(document).ready(function () {
     $("#latM").val("27");
     $("#latS").val("40");
 
-    // 30 most popular asteroids with their numbers and names
+    // Asteroids available in the compressed build (5-50)
     const popularAsteroids = [
-        {num: 1, name: "Ceres"},
-        {num: 2, name: "Pallas"},
-        {num: 3, name: "Juno"},
-        {num: 4, name: "Vesta"},
         {num: 5, name: "Astraea"},
         {num: 6, name: "Hebe"},
         {num: 7, name: "Iris"},
@@ -27,20 +23,40 @@ $(document).ready(function () {
         {num: 14, name: "Irene"},
         {num: 15, name: "Eunomia"},
         {num: 16, name: "Psyche"},
+        {num: 17, name: "Thetis"},
         {num: 18, name: "Melpomene"},
         {num: 19, name: "Fortuna"},
         {num: 20, name: "Massalia"},
+        {num: 21, name: "Lutetia"},
+        {num: 22, name: "Kalliope"},
+        {num: 23, name: "Thalia"},
+        {num: 24, name: "Themis"},
+        {num: 25, name: "Phocaea"},
         {num: 26, name: "Proserpina"},
+        {num: 27, name: "Euterpe"},
         {num: 28, name: "Bellona"},
         {num: 29, name: "Amphitrite"},
+        {num: 30, name: "Urania"},
         {num: 31, name: "Euphrosyne"},
+        {num: 32, name: "Pomona"},
+        {num: 33, name: "Polyhymnia"},
+        {num: 34, name: "Circe"},
+        {num: 35, name: "Leukothea"},
+        {num: 36, name: "Atalante"},
         {num: 37, name: "Fides"},
+        {num: 38, name: "Leda"},
         {num: 39, name: "Laetitia"},
         {num: 40, name: "Harmonia"},
         {num: 41, name: "Daphne"},
         {num: 42, name: "Isis"},
         {num: 43, name: "Ariadne"},
-        {num: 44, name: "Nysa"}
+        {num: 44, name: "Nysa"},
+        {num: 45, name: "Eugenia"},
+        {num: 46, name: "Hestia"},
+        {num: 47, name: "Aglaja"},
+        {num: 48, name: "Doris"},
+        {num: 49, name: "Pales"},
+        {num: 50, name: "Virginia"}
     ];
 
     // Initialize popular asteroids display
@@ -121,7 +137,11 @@ $(document).ready(function () {
             if (asteroidMode === "popular") {
                 const selectedAsteroids = [];
                 $(".asteroid-preset.selected").each(function() {
-                    selectedAsteroids.push($(this).data("asteroid-num"));
+                    const asteroidNum = $(this).data("asteroid-num");
+                    // Validate asteroid is in available range (5-50)
+                    if (asteroidNum >= 5 && asteroidNum <= 50) {
+                        selectedAsteroids.push(asteroidNum);
+                    }
                 });
                 if (selectedAsteroids.length > 0) {
                     asteroidData = {
@@ -130,8 +150,13 @@ $(document).ready(function () {
                     };
                 }
             } else if (asteroidMode === "range") {
-                const start = parseInt($("#asteroidStart").val(), 10);
-                const end = parseInt($("#asteroidEnd").val(), 10);
+                let start = parseInt($("#asteroidStart").val(), 10);
+                let end = parseInt($("#asteroidEnd").val(), 10);
+                
+                // Validate and constrain to available range (5-50)
+                start = Math.max(5, Math.min(50, start));
+                end = Math.max(5, Math.min(50, end));
+                
                 if (start && end && start <= end) {
                     asteroidData = {
                         mode: "range",
@@ -142,10 +167,17 @@ $(document).ready(function () {
             } else if (asteroidMode === "custom") {
                 const customList = $("#asteroidCustomList").val().trim();
                 if (customList) {
-                    asteroidData = {
-                        mode: "specific",
-                        list: customList
-                    };
+                    // Filter to only include asteroids 5-50
+                    const asteroidNumbers = customList.split(',')
+                        .map(num => parseInt(num.trim(), 10))
+                        .filter(num => !isNaN(num) && num >= 5 && num <= 50);
+                    
+                    if (asteroidNumbers.length > 0) {
+                        asteroidData = {
+                            mode: "specific",
+                            list: asteroidNumbers.join(",")
+                        };
+                    }
                 }
             }
         }
@@ -160,6 +192,20 @@ $(document).ready(function () {
         astrologer.onmessage = function (response) {
             console.log(response.data)
             var jsonResult = JSON.parse(response.data);
+            
+            // Debug: Log the full result structure
+            console.log('🔍 Full JSON result:', jsonResult);
+            console.log('🔍 Asteroids in result:', jsonResult.asteroids);
+            
+            // Check if there was an error
+            if (jsonResult.error) {
+                const toastLiveExample = document.getElementById("liveToast");
+                const toast = new bootstrap.Toast(toastLiveExample);
+                $("#toastbody").html("Calculation error: " + jsonResult.error_msg);
+                toast.show();
+                return;
+            }
+            
             var sResult = createResult(jsonResult);
             $("#resultDiv").html(sResult);
         };
@@ -271,6 +317,11 @@ function validateInput() {
 
 function createResult(jsonResult) {
     var sHtml = "";
+    
+    // Check if we have valid data
+    if (!jsonResult || !jsonResult.planets) {
+        return "<div class='alert alert-danger'>Error: Invalid calculation result</div>";
+    }
     
     // Main planets table
     sHtml = sHtml + "<h5>Planetary Positions</h5>";

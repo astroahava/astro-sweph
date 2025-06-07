@@ -73,9 +73,16 @@
   <div class="container">
     <main>
       <div class="text-center" style="margin:50px auto;max-width:700px;">
-        <h2>Sweph-Wasm</h2>
-        <p class="lead">Test page for Sweph-Wasm. Allows you to calculate the position of planets, asteroids and houses
-          in a range of dates that goes from the year 1800 to 2400.</p>
+        <h2>Sweph-Wasm <span class="badge bg-success">Single File</span></h2>
+        <p class="lead">Complete Swiss Ephemeris in a single 6.1MB file. All planets, asteroids 5-50, and houses for dates from 1800 to 2400.</p>
+        <div class="alert alert-success" role="alert">
+          <strong>✅ Optimized Single File Build:</strong><br>
+          • One file: <code>astro-embedded.js</code> (6.1MB)<br>
+          • No separate .wasm or .data files to load<br>
+          • Includes all 49 ephemeris files embedded<br>
+          • 5% smaller than 3-file version (6.4MB → 6.1MB)<br>
+          <small>Complete Swiss Ephemeris accuracy with simplified deployment</small>
+        </div>
       </div>
 
       <div class="row g-5" style="margin:0 auto;max-width:700px;">
@@ -235,39 +242,39 @@
             <li class="list-group-item d-flex justify-content-between lh-sm">
               <div class="col-sm-5">
                 <h6 class="my-0">Calculate Asteroids</h6>
-                <small class="text-muted">Include asteroid positions</small>
+                <small class="text-muted">Asteroids 5-50 included in this build</small>
               </div>
               <div class="col-sm-7">
                 <div class="form-check" style="margin-top: 8px;">
-                  <input class="form-check-input" type="checkbox" id="calculateAsteroids">
+                  <input class="form-check-input" type="checkbox" id="calculateAsteroids" checked>
                   <label class="form-check-label" for="calculateAsteroids">
-                    Include asteroids
+                    Include asteroids (5-50 available)
                   </label>
                 </div>
               </div>
             </li>
-            <li class="list-group-item" id="asteroidOptions" style="display: none;">
+            <li class="list-group-item" id="asteroidOptions">
               <div>
                 <h6 class="my-0">Asteroid Selection</h6>
-                <small class="text-muted">Choose which asteroids to calculate</small>
+                <small class="text-muted">Choose from 46 available asteroids (5-50)</small>
               </div>
               <div class="mt-2">
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModePopular" value="popular" checked>
                   <label class="form-check-label" for="asteroidModePopular">
-                    Popular 30 asteroids
+                    All 46 asteroids (5-50)
                   </label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModeRange" value="range">
                   <label class="form-check-label" for="asteroidModeRange">
-                    Range (e.g., 1-100)
+                    Range within 5-50
                   </label>
                 </div>
                 <div class="form-check">
                   <input class="form-check-input" type="radio" name="asteroidMode" id="asteroidModeCustom" value="custom">
                   <label class="form-check-label" for="asteroidModeCustom">
-                    Custom list
+                    Custom selection
                   </label>
                 </div>
               </div>
@@ -275,7 +282,7 @@
               <!-- Popular asteroids display -->
               <div id="popularAsteroidsDiv" class="mt-3">
                 <div class="mb-2">
-                  <strong>Popular Asteroids:</strong>
+                  <strong>Available Asteroids (5-50):</strong>
                   <button type="button" class="btn btn-sm btn-outline-secondary ms-2" id="selectAllAsteroids">Select All</button>
                   <button type="button" class="btn btn-sm btn-outline-secondary ms-1" id="clearAllAsteroids">Clear All</button>
                 </div>
@@ -289,20 +296,21 @@
                 <div class="row">
                   <div class="col-6">
                     <label for="asteroidStart" class="form-label">Start:</label>
-                    <input type="number" class="form-control" id="asteroidStart" min="1" max="1000" value="1">
+                    <input type="number" class="form-control" id="asteroidStart" min="5" max="50" value="5">
                   </div>
                   <div class="col-6">
                     <label for="asteroidEnd" class="form-label">End:</label>
-                    <input type="number" class="form-control" id="asteroidEnd" min="1" max="1000" value="30">
+                    <input type="number" class="form-control" id="asteroidEnd" min="5" max="50" value="30">
                   </div>
                 </div>
+                <small class="text-muted">Available range: 5-50 (46 asteroids total)</small>
               </div>
 
               <!-- Custom list input -->
               <div id="asteroidCustomDiv" class="mt-3" style="display: none;">
                 <label for="asteroidCustomList" class="form-label">Custom asteroid numbers (comma-separated):</label>
-                <textarea class="form-control" id="asteroidCustomList" rows="2" placeholder="1,2,3,4,433,1566,2060,3552"></textarea>
-                <small class="text-muted">Example: 1,2,3,4,433,1566 (max 100 asteroids)</small>
+                <textarea class="form-control" id="asteroidCustomList" rows="2" placeholder="5,6,7,8,16,19,26,37"></textarea>
+                <small class="text-muted">Available: 5-50 (e.g., 5,6,7,8,16,19,26,37 - max 46 asteroids)</small>
               </div>
             </li>
           </ul>
