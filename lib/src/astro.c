@@ -4,10 +4,6 @@
  * @version 2.0.0
  * @date 2024
  * 
- * @copyright Copyright (c) 2018-2022 NN Solex, www.sublunar.space
- * @license MIT: http://www.opensource.org/licenses/MIT
- * 
- * @author Modified by u-blusky for Swep-Wasm
  * @author Modified by astroahava kitty
  * 
  * This file provides a comprehensive WebAssembly interface to the Swiss Ephemeris
@@ -24,17 +20,17 @@
  * - JSON output format for easy JavaScript integration
  * 
  * @section functions Main Exported Functions
- * - get(): Complete astrological chart (planets + houses + angles)
- * - getPlanets(): Planetary positions only
- * - getHouses(): House cusps and angles only
- * - getPlanetaryNodes(): Nodes and apsides for all major planets
- * - getSinglePlanetNodes(): Nodes and apsides for a single planet
- * - getAsteroids(): Multiple asteroid positions by range
- * - getSpecificAsteroids(): Specific asteroids by catalog numbers
- * - getPlanet(): Single planet position
- * - getJulianDay(): Julian Day calculation
- * - degreesToDMS(): Degrees to DMS format conversion
- * - freeMemory(): Memory management for allocated strings
+ * - _get(): Complete astrological chart (planets + houses + angles)
+ * - _getPlanets(): Planetary positions only
+ * - _getHouses(): House cusps and angles only
+ * - _getPlanetaryNodes(): Nodes and apsides for all major planets
+ * - _getSinglePlanetNodes(): Nodes and apsides for a single planet
+ * - _getAsteroids(): Multiple asteroid positions by range
+ * - _getSpecificAsteroids(): Specific asteroids by catalog numbers
+ * - _getPlanet(): Single planet position
+ * - _getJulianDay(): Julian Day calculation
+ * - _degreesToDMS(): Degrees to DMS format conversion
+ * - _freeMemory(): Memory management for allocated strings
  * 
  * @section coordinates Coordinate Systems
  * - All calculations use Swiss Ephemeris (SEFLG_SWIEPH)
@@ -57,10 +53,43 @@
  * - Positions accurate to arc-seconds for major planets
  * - Houses depend on birth time accuracy
  * 
- * @section usage Usage Notes
- * All functions return JSON-formatted strings for consistency and easy parsing
- * in JavaScript. Remember to call freeMemory() for dynamically allocated results
- * to prevent memory leaks in long-running applications.
+ * @section usage JavaScript Usage Examples
+ * 
+ * Basic chart calculation:
+ * @code
+ * // Complete birth chart for London, December 25, 2023, 12:00 PM
+ * const resultPtr = Module._get(2023, 12, 25, 12, 0, 0, 0, 5, 30, "W", 51, 30, 0, "N", "P");
+ * const result = Module.UTF8ToString(resultPtr);
+ * const chartData = JSON.parse(result);
+ * console.log(chartData.planets[0].name); // "Sun"
+ * @endcode
+ * 
+ * Planetary nodes calculation:
+ * @code
+ * const nodesPtr = Module._getPlanetaryNodes(2023, 12, 25, 12, 0, 0, 1, 50000);
+ * const nodesResult = Module.UTF8ToString(nodesPtr);
+ * const nodesData = JSON.parse(nodesResult);
+ * @endcode
+ * 
+ * Asteroid calculations:
+ * @code
+ * // Range of asteroids (1-100)
+ * const asteroidsPtr = Module._getAsteroids(2023, 12, 25, 12, 0, 0, 1, 100, 100000);
+ * const asteroidsResult = Module.UTF8ToString(asteroidsPtr);
+ * const asteroidsData = JSON.parse(asteroidsResult);
+ * 
+ * // Specific asteroids by number
+ * const listStr = "1,2,3,4,433,1566";
+ * const strLen = Module.lengthBytesUTF8(listStr) + 1;
+ * const strPtr = Module._malloc(strLen);
+ * Module.stringToUTF8(listStr, strPtr, strLen);
+ * const specificPtr = Module._getSpecificAsteroids(2023, 12, 25, 12, 0, 0, strPtr, 100000);
+ * const specificResult = Module.UTF8ToString(specificPtr);
+ * Module._free(strPtr);
+ * @endcode
+ * 
+ * All functions return pointers to JSON strings that must be converted using Module.UTF8ToString().
+ * Memory management is handled automatically by the WASM runtime for most cases.
  * 
  * @see Swiss Ephemeris documentation: https://www.astro.com/swisseph/
  */
@@ -78,562 +107,377 @@
  * @brief Constants for degree/time formatting
  * @{
  */
-#define MY_ODEGREE_STRING "°"    /**< Degree symbol for display */
 #define BIT_ROUND_SEC 1          /**< Round to nearest second */
 #define BIT_ROUND_MIN 2          /**< Round to nearest minute */
 #define BIT_ZODIAC 4             /**< Use zodiac sign format */
+#define DEGREE_SYMBOL "°"        /**< Degree symbol for display */
 /** @} */
 
 /**
- * @defgroup planets Planet Selection Strings
- * @brief Character codes for different planet sets
+ * @defgroup buffer Buffer Size Constants
+ * @brief Standard buffer sizes for different operations
  * @{
  */
-#define PLSEL_D "0123456789mtABC"           /**< Default planets */
-#define PLSEL_P "0123456789mtABCDEFGHI"     /**< Planets + main asteroids */
-#define PLSEL_H "JKLMNOPQRSTUVWX"           /**< Hypothetical planets */
-#define PLSEL_A "0123456789mtABCDEFGHIJKLMNOPQRSTUVWX"  /**< All objects */
+#define CHART_BUFFER_SIZE 100000    /**< Complete chart calculation */
+#define PLANETS_BUFFER_SIZE 50000   /**< Planets only */
+#define HOUSES_BUFFER_SIZE 10000    /**< Houses only */
+#define NODES_BUFFER_SIZE 50000     /**< Planetary nodes */
+#define ASTEROIDS_BUFFER_SIZE 100000 /**< Multiple asteroids */
+#define SINGLE_BUFFER_SIZE 1000     /**< Single object */
 /** @} */
 
 /**
  * @brief Zodiac sign abbreviations
- * 
- * Three-letter abbreviations for the 12 zodiac signs used in DMS formatting
- * when BIT_ZODIAC flag is set.
  */
-static char *zod_nam[] = {"ar", "ta", "ge", "cn", "le", "vi",
-                          "li", "sc", "sa", "cp", "aq", "pi"};
+static const char *zodiac_signs[] = {
+    "ar", "ta", "ge", "cn", "le", "vi",
+    "li", "sc", "sa", "cp", "aq", "pi"
+};
 
 /**
  * @brief Convert decimal degrees to degrees/minutes/seconds format
  * 
- * This function converts a decimal degree value to a formatted string showing
- * degrees, minutes, and seconds. It supports zodiac sign display and various
- * rounding options.
- * 
- * @param x Decimal degrees to convert
- * @param iflag Format flags:
- *   - BIT_ROUND_MIN: Round to nearest minute
- *   - BIT_ROUND_SEC: Round to nearest second  
- *   - BIT_ZODIAC: Show zodiac sign (e.g., "15 ar 30'45\"" for 15°30'45" Aries)
- *   - SEFLG_EQUATORIAL: Use hours instead of degrees (for RA)
- * 
- * @return Static string containing formatted degrees
- * 
- * @note The returned string is static and will be overwritten on next call.
- *       Use strdup() or copy immediately if you need to preserve the result.
- * 
- * @warning Input values >= 360° are normalized to 0-360° range automatically.
+ * @param degrees Decimal degrees to convert
+ * @param format_flags Format flags (BIT_ROUND_MIN, BIT_ROUND_SEC, BIT_ZODIAC, SEFLG_EQUATORIAL)
+ * @return Static string containing formatted degrees (overwritten on next call)
  * 
  * @example
  * @code
  * double longitude = 185.759;
- * printf("Position: %s\n", dms(longitude, BIT_ZODIAC));
+ * printf("Position: %s\n", format_degrees(longitude, BIT_ZODIAC));
  * // Output: "Position: 5 li 45'32\""  (5° Libra 45'32")
  * @endcode
  */
-static char *dms(double x, long iflag)
+static char *format_degrees(double degrees, int format_flags)
 {
-  int izod;
-  long k, kdeg, kmin, ksec;
-  char *c = MY_ODEGREE_STRING;
-  char *sp, s1[50];
-  static char s[50];
-  int sgn;
-  
-  *s = '\0';
-  
-  // Use hour symbol for equatorial coordinates
-  if (iflag & SEFLG_EQUATORIAL)
-    c = "h";
+    static char result[50];
+    const char *symbol = (format_flags & SEFLG_EQUATORIAL) ? "h" : "d";
+    int sign = (degrees < 0) ? -1 : 1;
     
-  // Handle negative values
-  if (x < 0) {
-    x = -x;
-    sgn = -1;
-  } else {
-    sgn = 1;
-  }
-  
-  // Normalize degrees to 0-360 range using Swiss Ephemeris function
-  x = swe_degnorm(x);
-  
-  // Apply rounding before conversion
-  if (iflag & BIT_ROUND_MIN)
-    x += 0.5 / 60;
-  if (iflag & BIT_ROUND_SEC)
-    x += 0.5 / 3600;
-  
-  // Format with zodiac signs if requested
-  if (iflag & BIT_ZODIAC) {
-    izod = (int)(x / 30);
-    x = fmod(x, 30);
-    kdeg = (long)x;
-    sprintf(s, "%2ld %s ", kdeg, zod_nam[izod]);
-  } else {
-    kdeg = (long)x;
-    sprintf(s, " %3ld%s", kdeg, c);
-  }
-  
-  // Convert fractional degrees to minutes
-  x -= kdeg;
-  x *= 60;
-  kmin = (long)x;
-  
-  if ((iflag & BIT_ZODIAC) && (iflag & BIT_ROUND_MIN))
-    sprintf(s1, "%2ld", kmin);
-  else
-    sprintf(s1, "%2ld'", kmin);
-  strcat(s, s1);
-  
-  if (iflag & BIT_ROUND_MIN)
-    goto return_dms;
-  
-  // Convert fractional minutes to seconds
-  x -= kmin;
-  x *= 60;
-  ksec = (long)x;
-  
-  if (iflag & BIT_ROUND_SEC)
-    sprintf(s1, "%2ld\"", ksec);
-  else
-    sprintf(s1, "%2ld", ksec);
-  strcat(s, s1);
-  
-  if (iflag & BIT_ROUND_SEC)
-    goto return_dms;
-  
-  // Add fractional seconds
-  x -= ksec;
-  k = (long)(x * 10000);
-  sprintf(s1, ".%04ld", k);
-  strcat(s, s1);
-  
-return_dms:
-  // Apply negative sign if needed
-  if (sgn < 0) {
-    sp = strpbrk(s, "0123456789");
-    *(sp - 1) = '-';
-  }
-  
-  return s;
+    // Handle negative values and normalize
+    degrees = fabs(degrees);
+    degrees = swe_degnorm(degrees);
+    
+    // Apply rounding
+    if (format_flags & BIT_ROUND_MIN) degrees += 0.5 / 60.0;
+    if (format_flags & BIT_ROUND_SEC) degrees += 0.5 / 3600.0;
+    
+    if (format_flags & BIT_ZODIAC) {
+        // Zodiac format: "15 ar 30'45""
+        int zodiac_index = (int)(degrees / 30.0);
+        double sign_degrees = fmod(degrees, 30.0);
+        int deg = (int)sign_degrees;
+        int min = (int)((sign_degrees - deg) * 60.0);
+        int sec = (int)(((sign_degrees - deg) * 60.0 - min) * 60.0);
+        
+        if (format_flags & BIT_ROUND_MIN) {
+            snprintf(result, sizeof(result), "%2d %s %2d", deg, zodiac_signs[zodiac_index], min);
+        } else if (format_flags & BIT_ROUND_SEC) {
+            snprintf(result, sizeof(result), "%2d %s %2d'%2d", deg, zodiac_signs[zodiac_index], min, sec);
+        } else {
+            double frac_sec = ((sign_degrees - deg) * 60.0 - min) * 60.0 - sec;
+            int frac = (int)(frac_sec * 10000);
+            snprintf(result, sizeof(result), "%2d %s %2d'%2d.%04d", deg, zodiac_signs[zodiac_index], min, sec, frac);
+        }
+    } else {
+        // Standard format: "185°45'32""
+        int deg = (int)degrees;
+        int min = (int)((degrees - deg) * 60.0);
+        int sec = (int)(((degrees - deg) * 60.0 - min) * 60.0);
+        
+        if (format_flags & BIT_ROUND_MIN) {
+            snprintf(result, sizeof(result), "%3d%s%2d'", deg, symbol, min);
+        } else if (format_flags & BIT_ROUND_SEC) {
+            snprintf(result, sizeof(result), "%3d%s%2d'%2d", deg, symbol, min, sec);
+        } else {
+            double frac_sec = ((degrees - deg) * 60.0 - min) * 60.0 - sec;
+            int frac = (int)(frac_sec * 10000);
+            snprintf(result, sizeof(result), "%3d%s%2d'%2d.%04d", deg, symbol, min, sec, frac);
+        }
+    }
+    
+    // Apply negative sign if needed
+    if (sign < 0) {
+        char *first_digit = strpbrk(result, "0123456789");
+        if (first_digit && first_digit > result) {
+            *(first_digit - 1) = '-';
+        }
+    }
+    
+    return result;
+}
+
+/**
+ * @brief Calculate Julian Day from date/time components
+ */
+static double calculate_julian_day(int year, int month, int day, int hour, int minute, int second)
+{
+    double decimal_hour = hour + minute / 60.0 + second / 3600.0;
+    return swe_julday(year, month, day, decimal_hour, SE_GREG_CAL);
+}
+
+/**
+ * @brief Convert geographic coordinates to decimal degrees
+ */
+static void convert_coordinates(int deg, int min, int sec, const char *direction, double *result)
+{
+    *result = deg + min / 60.0 + sec / 3600.0;
+    if (*direction == 'W' || *direction == 'S') {
+        *result = -*result;
+    }
+}
+
+/**
+ * @brief Format planet data as JSON
+ */
+static int format_planet_json(char *buffer, int buffer_size, int planet_id, const char *name, 
+                             double *coordinates, long flags, const char *error_msg, 
+                             const char *separator)
+{
+    if (error_msg) {
+        return snprintf(buffer, buffer_size,
+            " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, "
+            "\"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, "
+            "\"error\": true, \"error_msg\": \"%s\" }%s",
+            planet_id, name, flags, error_msg, separator);
+    } else {
+        return snprintf(buffer, buffer_size,
+            " { \"index\": %d, \"name\": \"%s\", \"long\": %.6f, \"lat\": %.6f, "
+            "\"distance\": %.9f, \"speed\": %.6f, \"long_s\": \"%s\", \"iflagret\": %ld, "
+            "\"error\": false }%s",
+            planet_id, name, coordinates[0], coordinates[1], coordinates[2], coordinates[3],
+            format_degrees(coordinates[0], BIT_ZODIAC), flags, separator);
+    }
 }
 
 /**
  * @brief Core astrological calculation function
- * 
- * This internal function performs the main astronomical calculations for 
- * planetary positions and house cusps. It's used by the public API functions
- * to generate consistent results.
- * 
- * @param year Year (1800-2400 for best accuracy)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23) in local time or UT
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @param lonG Longitude degrees (0-179)
- * @param lonM Longitude minutes (0-59)
- * @param lonS Longitude seconds (0-59)
- * @param lonEW Longitude direction ("E" or "W")
- * @param latG Latitude degrees (0-89)
- * @param latM Latitude minutes (0-59)
- * @param latS Latitude seconds (0-59)
- * @param latNS Latitude direction ("N" or "S")
- * @param iHouse House system code (single character):
- *   - 'P': Placidus (most common)
- *   - 'K': Koch
- *   - 'O': Porphyrius  
- *   - 'R': Regiomontanus
- *   - 'C': Campanus
- *   - 'W': Whole sign houses
- *   - 'E': Equal houses
- *   - 'B': Alcabitus
- * @param buflen Buffer size for output string
- * 
- * @return JSON string containing complete astrological data
- * 
- * @note This function calculates Julian Day, planetary positions, and house cusps
- *       in a single call for efficiency. All major planets from Sun to Pluto are
- *       included, plus the Moon's nodes and main asteroids.
  */
 const char *astro(int year, int month, int day, int hour, int minute, int second, 
                   int lonG, int lonM, int lonS, char *lonEW, int latG, int latM, 
                   int latS, char *latNS, char *iHouse, int buflen)
 {
-  char snam[40], serr[AS_MAXCH];
-  double jut = 0.0;
-  double tjd_ut, x[6], lon, lat;
-  double cusp[12 + 1];
-  double ascmc[10];
-  long iflag, iflagret;
-  int p, i;
-  int round_flag = 0;
-  char *Buffer = malloc(buflen);
-  int length = 0;
-  char *sChar = malloc(3);
-
-  // Initialize Swiss Ephemeris with standard path
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
-
-  // Convert time to decimal hours and calculate Julian Day
-  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
-
-  // Begin JSON output
-  length += snprintf(Buffer + length, buflen - length, "{ ");
-
-  // Add initialization data
-  length += snprintf(Buffer + length, buflen - length,
-                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %.6f }, ", 
-                     year, month, day, hour, minute, second, tjd_ut);
-
-  // Calculate and output planetary positions
-  length += snprintf(Buffer + length, buflen - length, "\"planets\": [ ");
-
-  for (p = SE_SUN; p < SE_NPLANETS; p++)
-  {
-    if (p == SE_EARTH) continue; // Skip Earth in geocentric calculations
+    char planet_name[40], error_msg[AS_MAXCH];
+    double julian_day, coordinates[6], longitude, latitude;
+    double house_cusps[13], angles[10];  // house_cusps[0] unused, 1-12 are the cusps
+    long calculation_flags, result_flags;
     
-    strcpy(sChar, ", ");
-    if (p == SE_NPLANETS - 1)
-      strcpy(sChar, " ");
-
-    iflagret = swe_calc_ut(tjd_ut, p, iflag, x, serr);
-
-    if (iflagret > 0 && (iflagret & SEFLG_SWIEPH))
-    {
-      swe_get_planet_name(p, snam);
-      length += snprintf(Buffer + length, buflen - length,
-                         " { \"index\": %d, \"name\": \"%s\", \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, \"speed\": %.6f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s", 
-                         p, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+    char *buffer = malloc(buflen);
+    int length = 0;
+    
+    // Initialize Swiss Ephemeris
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
+    
+    // Calculate Julian Day
+    julian_day = calculate_julian_day(year, month, day, hour, minute, second);
+    
+    // Begin JSON output
+    length += snprintf(buffer + length, buflen - length,
+        "{ \"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, "
+        "\"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %.6f }, ",
+        year, month, day, hour, minute, second, julian_day);
+    
+    // Calculate planetary positions
+    length += snprintf(buffer + length, buflen - length, "\"planets\": [ ");
+    
+    for (int planet = SE_SUN; planet < SE_NPLANETS; planet++) {
+        if (planet == SE_EARTH) continue; // Skip Earth in geocentric calculations
+        
+        const char *separator = (planet == SE_NPLANETS - 1) ? " " : ", ";
+        result_flags = swe_calc_ut(julian_day, planet, calculation_flags, coordinates, error_msg);
+        swe_get_planet_name(planet, planet_name);
+        
+        if (result_flags > 0 && (result_flags & SEFLG_SWIEPH)) {
+            length += format_planet_json(buffer + length, buflen - length, 
+                planet, planet_name, coordinates, result_flags, NULL, separator);
+        } else {
+            length += format_planet_json(buffer + length, buflen - length,
+                planet, planet_name, NULL, result_flags, error_msg, separator);
+        }
     }
-    else
-    {
-      swe_get_planet_name(p, snam);
-      length += snprintf(Buffer + length, buflen - length,
-                         " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }%s", 
-                         p, snam, iflagret, serr, sChar);
+    
+    length += snprintf(buffer + length, buflen - length, "], ");
+    
+    // Convert and calculate house system
+    convert_coordinates(lonG, lonM, lonS, lonEW, &longitude);
+    convert_coordinates(latG, latM, latS, latNS, &latitude);
+    
+    swe_houses_ex(julian_day, calculation_flags, latitude, longitude, 
+                  (int)*iHouse, house_cusps, angles);
+    
+    // Output angles (Ascendant and Midheaven)
+    length += snprintf(buffer + length, buflen - length,
+        "\"ascmc\": [ "
+        "{ \"name\": \"Asc\", \"long\": %.6f, \"long_s\": \"%s\" }, "
+        "{ \"name\": \"MC\", \"long\": %.6f, \"long_s\": \"%s\" } ], ",
+        angles[0], format_degrees(angles[0], BIT_ZODIAC),
+        angles[1], format_degrees(angles[1], BIT_ZODIAC));
+    
+    // Output house cusps
+    length += snprintf(buffer + length, buflen - length, "\"houses\": [ ");
+    for (int house = 1; house <= 12; house++) {
+        const char *separator = (house == 12) ? " " : ", ";
+        length += snprintf(buffer + length, buflen - length,
+            "{ \"name\": \"%d\", \"long\": %.6f, \"long_s\": \"%s\" }%s ",
+            house, house_cusps[house], format_degrees(house_cusps[house], BIT_ZODIAC), separator);
     }
-  }
-
-  length += snprintf(Buffer + length, buflen - length, "], ");
-
-  // Convert geographic coordinates to decimal degrees
-  lon = lonG + lonM / 60.0 + lonS / 3600.0;
-  if (*lonEW == 'W')
-    lon = -lon;
-  lat = latG + latM / 60.0 + latS / 3600.0;
-  if (*latNS == 'S')
-    lat = -lat;
-
-  // Calculate house cusps and angles
-  swe_houses_ex(tjd_ut, iflag, lat, lon, (int)*iHouse, cusp, ascmc);
-  
-  // Output Ascendant and Midheaven
-  length += snprintf(Buffer + length, buflen - length, "\"ascmc\": [ ");
-  length += snprintf(Buffer + length, buflen - length,
-                     "{ \"name\": \"Asc\", \"long\": %.6f, \"long_s\": \"%s\" }, ", 
-                     ascmc[0], dms(ascmc[0], round_flag | BIT_ZODIAC));
-  length += snprintf(Buffer + length, buflen - length,
-                     "{ \"name\": \"MC\", \"long\": %.6f, \"long_s\": \"%s\" } ", 
-                     ascmc[1], dms(ascmc[1], round_flag | BIT_ZODIAC));
-  length += snprintf(Buffer + length, buflen - length, "], ");
-
-  // Output house cusps
-  length += snprintf(Buffer + length, buflen - length, "\"houses\": [ ");
-  for (i = 1; i <= 12; i++)
-  {
-    strcpy(sChar, ", ");
-    if (i == 12)
-      strcpy(sChar, " ");
-    length += snprintf(Buffer + length, buflen - length,
-                       "{ \"name\": \"%d\", \"long\": %.6f, \"long_s\": \"%s\" }%s ", 
-                       i, cusp[i], dms(cusp[i], round_flag | BIT_ZODIAC), sChar);
-  }
-  length += snprintf(Buffer + length, buflen - length, "] }");
-  
-  free(sChar);
-  return Buffer;
+    length += snprintf(buffer + length, buflen - length, "] }");
+    
+    return buffer;
 }
 
 /**
  * @brief Simple test function to verify WebAssembly exports
- * 
- * This function serves as a basic connectivity test to ensure the WebAssembly
- * module is properly loaded and the export mechanism is working correctly.
- * 
- * @return Static test string confirming functionality
- * 
- * @example JavaScript usage:
- * @code
- * const result = Module.ccall('test', 'string', [], []);
- * console.log(result); // "Swiss Ephemeris WASM v2.0 ready"
- * @endcode
  */
 EMSCRIPTEN_KEEPALIVE
 const char *test()
 {
-  return "Swiss Ephemeris WASM v2.0 ready";
+    return "Swiss Ephemeris WASM v2.0 ready";
 }
 
 /**
  * @brief Complete astrological chart calculation
- * 
- * This is the main function for calculating a complete astrological chart including
- * planetary positions, house cusps, and major angles (Ascendant/Midheaven).
- * 
- * @param year Year (1800-2400 for highest accuracy)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23) in the desired time zone
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @param lonG Longitude degrees (0-179)
- * @param lonM Longitude minutes (0-59)
- * @param lonS Longitude seconds (0-59)
- * @param lonEW Longitude direction ("E" for East, "W" for West)
- * @param latG Latitude degrees (0-89)
- * @param latM Latitude minutes (0-59)
- * @param latS Latitude seconds (0-59)
- * @param latNS Latitude direction ("N" for North, "S" for South)
- * @param iHouse House system character:
- *   - 'P': Placidus (most common, default in most software)
- *   - 'K': Koch (popular European system)
- *   - 'O': Porphyrius (ancient system)
- *   - 'R': Regiomontanus (medieval system)
- *   - 'C': Campanus (medieval system)
- *   - 'W': Whole sign houses (ancient system)
- *   - 'E': Equal houses (simple division)
- *   - 'B': Alcabitus (medieval system)
- *   - 'T': Topocentric (modern system)
- * 
- * @return JSON string containing:
- *   - initDate: Input parameters and calculated Julian Day
- *   - planets: Array of planetary positions (Sun through Pluto)
- *   - ascmc: Ascendant and Midheaven angles
- *   - houses: 12 house cusps
- * 
- * @note The function automatically handles coordinate conversions and applies
- *       appropriate Swiss Ephemeris flags for geocentric calculations with speed.
- *       Remember to call freeMemory() on the returned pointer when done.
- * 
- * @example JavaScript usage:
- * @code
- * // Birth chart for London, December 25, 2023, 12:00 PM
- * const chart = Module.ccall('get', 'string',
- *   ['number', 'number', 'number', 'number', 'number', 'number',
- *    'number', 'number', 'number', 'string', 'number', 'number', 'number', 'string', 'string'],
- *   [2023, 12, 25, 12, 0, 0, 0, 5, 30, "W", 51, 30, 0, "N", "P"]);
- * const data = JSON.parse(chart);
- * console.log(data.planets[0].name); // "Sun"
- * Module.ccall('freeMemory', null, ['number'], [chart]);
- * @endcode
  */
 EMSCRIPTEN_KEEPALIVE
 const char *get(int year, int month, int day, int hour, int minute, int second, 
                 int lonG, int lonM, int lonS, char *lonEW, int latG, int latM, 
                 int latS, char *latNS, char *iHouse)
 {
-  return astro(year, month, day, hour, minute, second, lonG, lonM, lonS, lonEW, 
-               latG, latM, latS, latNS, iHouse, 100000);
+    return astro(year, month, day, hour, minute, second, lonG, lonM, lonS, lonEW, 
+                 latG, latM, latS, latNS, iHouse, CHART_BUFFER_SIZE);
 }
 
 /**
  * @brief Calculate planetary nodes and apsides for all major planets
- * 
- * This function calculates the ascending/descending nodes and perihelion/aphelion
- * points for all major planets (Sun through Pluto) using the Swiss Ephemeris.
- * Earth is skipped as it doesn't have meaningful heliocentric nodes.
- * 
- * Nodes represent the intersection points of a planet's orbital plane with the
- * ecliptic plane. Apsides represent the closest (perihelion) and farthest 
- * (aphelion) points in the planet's orbit.
- * 
- * @param year Year (1800-2400 for best accuracy)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23) in Universal Time
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @param method Calculation method:
- *   - 0 (SE_NODBIT_MEAN): Mean elements for Sun-Neptune, osculating for Pluto+
- *   - 1 (SE_NODBIT_OSCU): Osculating elements for all planets
- *   - 2 (SE_NODBIT_OSCU_BAR): Barycentric osculating elements for outer planets
- *   - 4 (SE_NODBIT_FOPOINT): Focal points instead of aphelia (combinable)
- * @param buflen Buffer length for output string (recommended: 50000+)
- * 
- * @return JSON string containing:
- *   - initDate: Input date and calculated Julian Day ET
- *   - method: Calculation method used
- *   - nodes: Array of planet data with:
- *     - index: Planet number (0=Sun, 1=Moon, etc.)
- *     - name: Planet name
- *     - ascending_node: Longitude, latitude, distance, speeds, formatted string
- *     - descending_node: Same format as ascending_node
- *     - perihelion: Closest point to Sun
- *     - aphelion: Farthest point from Sun (or focal point if method & 4)
- *     - error: Boolean indicating calculation success
- * 
- * @note Coordinates are in degrees (longitude/latitude) and AU (distance).
- *       Speeds are in degrees/day and AU/day.
- *       Remember to free the returned pointer with freeMemory() in JavaScript.
- * 
- * @example JavaScript usage:
- * const nodes = Module.ccall('getPlanetaryNodes', 'string',
- *   ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number'],
- *   [2023, 12, 25, 12, 0, 0, 0, 50000]);
- * const data = JSON.parse(nodes);
- * console.log(data.nodes[3].name); // "Mars"
- * Module.ccall('freeMemory', null, ['number'], [nodes]);
  */
 EMSCRIPTEN_KEEPALIVE
 const char *getPlanetaryNodes(int year, int month, int day, int hour, int minute, int second, int method, int buflen)
 {
-  char snam[40], serr[AS_MAXCH];
-  double jut = 0.0;
-  double tjd_et, tjd_ut;
-  double xnasc[6], xndsc[6], xperi[6], xaphe[6];
-  long iflag;
-  int32 retval;
-  int p;
-  int round_flag = 0;
-  char *Buffer = malloc(buflen);
-  int length = 0;
-  char *sChar = malloc(3);
-
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
-
-  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
-  tjd_et = tjd_ut + swe_deltat_ex(tjd_ut, iflag, serr);
-
-  length += snprintf(Buffer + length, buflen - length, "{ ");
-  length += snprintf(Buffer + length, buflen - length,
-                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_et\": %f }, ", 
-                     year, month, day, hour, minute, second, tjd_et);
-
-  length += snprintf(Buffer + length, buflen - length, "\"method\": %d, ", method);
-  length += snprintf(Buffer + length, buflen - length, "\"nodes\": [ ");
-
-  // Calculate nodes for major planets (Sun through Pluto)
-  for (p = SE_SUN; p <= SE_PLUTO; p++)
-  {
-    if (p == SE_EARTH) continue; // Skip Earth as it doesn't have meaningful nodes in heliocentric system
+    char planet_name[40], error_msg[AS_MAXCH];
+    double julian_day_ut, julian_day_et;
+    double ascending_node[6], descending_node[6], perihelion[6], aphelion[6];
+    long calculation_flags;
+    int32 result;
     
-    strcpy(sChar, ", ");
-    if (p == SE_PLUTO)
-      strcpy(sChar, " ");
+    char *buffer = malloc(buflen);
+    int length = 0;
 
-    // Initialize arrays
-    for (int i = 0; i < 6; i++) {
-      xnasc[i] = xndsc[i] = xperi[i] = xaphe[i] = 0.0;
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
+
+    julian_day_ut = calculate_julian_day(year, month, day, hour, minute, second);
+    julian_day_et = julian_day_ut + swe_deltat_ex(julian_day_ut, calculation_flags, error_msg);
+
+    length += snprintf(buffer + length, buflen - length,
+        "{ \"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, "
+        "\"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_et\": %.6f }, "
+        "\"method\": %d, \"nodes\": [ ",
+        year, month, day, hour, minute, second, julian_day_et, method);
+
+    // Calculate nodes for major planets (Sun through Pluto)
+    for (int planet = SE_SUN; planet <= SE_PLUTO; planet++) {
+        if (planet == SE_EARTH) continue; // Skip Earth
+        
+        const char *separator = (planet == SE_PLUTO) ? " " : ", ";
+
+        // Initialize coordinate arrays
+        memset(ascending_node, 0, sizeof(ascending_node));
+        memset(descending_node, 0, sizeof(descending_node));
+        memset(perihelion, 0, sizeof(perihelion));
+        memset(aphelion, 0, sizeof(aphelion));
+
+        result = swe_nod_aps(julian_day_et, planet, calculation_flags, method, 
+                           ascending_node, descending_node, perihelion, aphelion, error_msg);
+        swe_get_planet_name(planet, planet_name);
+
+        if (result >= 0) {
+            length += snprintf(buffer + length, buflen - length,
+                " { \"index\": %d, \"name\": \"%s\", "
+                "\"ascending_node\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+                "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+                "\"descending_node\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+                "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+                "\"perihelion\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+                "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+                "\"aphelion\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+                "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+                "\"error\": false }%s",
+                planet, planet_name,
+                ascending_node[0], ascending_node[1], ascending_node[2], ascending_node[3], ascending_node[4], ascending_node[5], 
+                format_degrees(ascending_node[0], BIT_ZODIAC),
+                descending_node[0], descending_node[1], descending_node[2], descending_node[3], descending_node[4], descending_node[5], 
+                format_degrees(descending_node[0], BIT_ZODIAC),
+                perihelion[0], perihelion[1], perihelion[2], perihelion[3], perihelion[4], perihelion[5], 
+                format_degrees(perihelion[0], BIT_ZODIAC),
+                aphelion[0], aphelion[1], aphelion[2], aphelion[3], aphelion[4], aphelion[5], 
+                format_degrees(aphelion[0], BIT_ZODIAC),
+                separator);
+        } else {
+            length += snprintf(buffer + length, buflen - length,
+                " { \"index\": %d, \"name\": \"%s\", \"error\": true, \"error_msg\": \"%s\" }%s",
+                planet, planet_name, error_msg, separator);
+        }
     }
 
-    retval = swe_nod_aps(tjd_et, p, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
-
-    swe_get_planet_name(p, snam);
-
-    if (retval >= 0) {
-      length += snprintf(Buffer + length, buflen - length,
-                         " { \"index\": %d, \"name\": \"%s\", "
-                         "\"ascending_node\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-                         "\"descending_node\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-                         "\"perihelion\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-                         "\"aphelion\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-                         "\"error\": false }%s",
-                         p, snam,
-                         xnasc[0], xnasc[1], xnasc[2], xnasc[3], xnasc[4], xnasc[5], dms(xnasc[0], round_flag | BIT_ZODIAC),
-                         xndsc[0], xndsc[1], xndsc[2], xndsc[3], xndsc[4], xndsc[5], dms(xndsc[0], round_flag | BIT_ZODIAC),
-                         xperi[0], xperi[1], xperi[2], xperi[3], xperi[4], xperi[5], dms(xperi[0], round_flag | BIT_ZODIAC),
-                         xaphe[0], xaphe[1], xaphe[2], xaphe[3], xaphe[4], xaphe[5], dms(xaphe[0], round_flag | BIT_ZODIAC),
-                         sChar);
-    } else {
-      length += snprintf(Buffer + length, buflen - length,
-                         " { \"index\": %d, \"name\": \"%s\", \"error\": true, \"error_msg\": \"%s\" }%s",
-                         p, snam, serr, sChar);
-    }
-  }
-
-  length += snprintf(Buffer + length, buflen - length, "] }");
-  free(sChar);
-  return Buffer;
+    length += snprintf(buffer + length, buflen - length, "] }");
+    return buffer;
 }
 
 /**
  * @brief Calculate nodes and apsides for a single planet
- * 
- * This function calculates the nodes and apsides for a single specified planet
- * using Julian Day in Ephemeris Time (ET). More efficient than getPlanetaryNodes()
- * when only one planet is needed.
- * 
- * @param planet_id Planet number:
- *   - 0: Sun, 1: Moon, 2: Mercury, 3: Venus, 4: Mars
- *   - 5: Jupiter, 6: Saturn, 7: Uranus, 8: Neptune, 9: Pluto
- * @param julian_day_et Julian Day in Ephemeris Time (TT)
- * @param method Calculation method (see getPlanetaryNodes() for details)
- * @param buflen Buffer length for output string (recommended: 5000+)
- * 
- * @return JSON string containing:
- *   - index: Planet number
- *   - name: Planet name
- *   - jd_et: Julian Day ET used for calculation
- *   - method: Calculation method
- *   - ascending_node, descending_node, perihelion, aphelion: Same format as getPlanetaryNodes()
- *   - error: Boolean indicating calculation success
- * 
- * @note Use swe_julday() or getJulianDay() to convert calendar date to Julian Day.
- *       Add Delta T to get Julian Day ET from Julian Day UT.
- * 
- * @example JavaScript usage:
- * const jd_et = 2460310.0; // Approximate JD for 2024-01-01
- * const marsNodes = Module.ccall('getSinglePlanetNodes', 'string',
- *   ['number', 'number', 'number', 'number'],
- *   [4, jd_et, 1, 5000]); // Mars, JD, osculating method, buffer size
  */
 EMSCRIPTEN_KEEPALIVE
 const char *getSinglePlanetNodes(int planet_id, double julian_day_et, int method, int buflen)
 {
-  char snam[40], serr[AS_MAXCH];
-  double xnasc[6], xndsc[6], xperi[6], xaphe[6];
-  long iflag;
-  int32 retval;
-  int round_flag = 0;
-  char *Buffer = malloc(buflen);
+    char planet_name[40], error_msg[AS_MAXCH];
+    double ascending_node[6], descending_node[6], perihelion[6], aphelion[6];
+    long calculation_flags;
+    int32 result;
+    char *buffer = malloc(buflen);
 
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
 
-  // Initialize arrays
-  for (int i = 0; i < 6; i++) {
-    xnasc[i] = xndsc[i] = xperi[i] = xaphe[i] = 0.0;
-  }
+    // Initialize coordinate arrays
+    memset(ascending_node, 0, sizeof(ascending_node));
+    memset(descending_node, 0, sizeof(descending_node));
+    memset(perihelion, 0, sizeof(perihelion));
+    memset(aphelion, 0, sizeof(aphelion));
 
-  retval = swe_nod_aps(julian_day_et, planet_id, iflag, method, xnasc, xndsc, xperi, xaphe, serr);
-  swe_get_planet_name(planet_id, snam);
+    result = swe_nod_aps(julian_day_et, planet_id, calculation_flags, method, 
+                        ascending_node, descending_node, perihelion, aphelion, error_msg);
+    swe_get_planet_name(planet_id, planet_name);
 
-  if (retval >= 0) {
-    snprintf(Buffer, buflen,
-             "{ \"index\": %d, \"name\": \"%s\", \"jd_et\": %f, \"method\": %d, "
-             "\"ascending_node\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-             "\"descending_node\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-             "\"perihelion\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-             "\"aphelion\": { \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed_long\": %f, \"speed_lat\": %f, \"speed_dist\": %f, \"long_s\": \"%s\" }, "
-             "\"error\": false }",
-             planet_id, snam, julian_day_et, method,
-             xnasc[0], xnasc[1], xnasc[2], xnasc[3], xnasc[4], xnasc[5], dms(xnasc[0], round_flag | BIT_ZODIAC),
-             xndsc[0], xndsc[1], xndsc[2], xndsc[3], xndsc[4], xndsc[5], dms(xndsc[0], round_flag | BIT_ZODIAC),
-             xperi[0], xperi[1], xperi[2], xperi[3], xperi[4], xperi[5], dms(xperi[0], round_flag | BIT_ZODIAC),
-             xaphe[0], xaphe[1], xaphe[2], xaphe[3], xaphe[4], xaphe[5], dms(xaphe[0], round_flag | BIT_ZODIAC));
-  } else {
-    snprintf(Buffer, buflen,
-             "{ \"index\": %d, \"name\": \"%s\", \"jd_et\": %f, \"method\": %d, \"error\": true, \"error_msg\": \"%s\" }",
-             planet_id, snam, julian_day_et, method, serr);
-  }
+    if (result >= 0) {
+        snprintf(buffer, buflen,
+            "{ \"index\": %d, \"name\": \"%s\", \"jd_et\": %.6f, \"method\": %d, "
+            "\"ascending_node\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+            "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+            "\"descending_node\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+            "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+            "\"perihelion\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+            "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+            "\"aphelion\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
+            "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
+            "\"error\": false }",
+            planet_id, planet_name, julian_day_et, method,
+            ascending_node[0], ascending_node[1], ascending_node[2], ascending_node[3], ascending_node[4], ascending_node[5], 
+            format_degrees(ascending_node[0], BIT_ZODIAC),
+            descending_node[0], descending_node[1], descending_node[2], descending_node[3], descending_node[4], descending_node[5], 
+            format_degrees(descending_node[0], BIT_ZODIAC),
+            perihelion[0], perihelion[1], perihelion[2], perihelion[3], perihelion[4], perihelion[5], 
+            format_degrees(perihelion[0], BIT_ZODIAC),
+            aphelion[0], aphelion[1], aphelion[2], aphelion[3], aphelion[4], aphelion[5], 
+            format_degrees(aphelion[0], BIT_ZODIAC));
+    } else {
+        snprintf(buffer, buflen,
+            "{ \"index\": %d, \"name\": \"%s\", \"jd_et\": %.6f, \"method\": %d, "
+            "\"error\": true, \"error_msg\": \"%s\" }",
+            planet_id, planet_name, julian_day_et, method, error_msg);
+    }
 
-  return Buffer;
+    return buffer;
 }
 
 /**
@@ -747,7 +591,7 @@ const char *getAsteroids(int year, int month, int day, int hour, int minute, int
     {
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s",
-                         ast_num, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+                         ast_num, snam, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
       calculated_count++;
     }
     else
@@ -872,7 +716,7 @@ const char *getSpecificAsteroids(int year, int month, int day, int hour, int min
     {
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s",
-                         ast_num, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+                         ast_num, snam, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
       calculated_count++;
     }
     else
@@ -940,240 +784,166 @@ const char *getEphemerisInfo(int buflen)
 
 /**
  * @brief Calculate planetary positions only (without houses)
- * @param year Year (1800-2400)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23)
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @return JSON string containing planetary positions
  */
 EMSCRIPTEN_KEEPALIVE
 const char *getPlanets(int year, int month, int day, int hour, int minute, int second)
 {
-  char snam[40], serr[AS_MAXCH];
-  double jut = 0.0;
-  double tjd_ut, x[6];
-  long iflag, iflagret;
-  int p;
-  int round_flag = 0;
-  char *Buffer = malloc(50000);
-  int length = 0;
-  char *sChar = malloc(3);
-
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
-
-  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
-
-  length += snprintf(Buffer + length, 50000 - length, "{ ");
-  length += snprintf(Buffer + length, 50000 - length,
-                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %f }, ", 
-                     year, month, day, hour, minute, second, tjd_ut);
-
-  length += snprintf(Buffer + length, 50000 - length, "\"planets\": [ ");
-
-  for (p = SE_SUN; p < SE_NPLANETS; p++)
-  {
-    if (p == SE_EARTH) continue;
+    char planet_name[40], error_msg[AS_MAXCH];
+    double julian_day, coordinates[6];
+    long calculation_flags, result_flags;
     
-    strcpy(sChar, ", ");
-    if (p == SE_NPLANETS - 1)
-      strcpy(sChar, " ");
+    char *buffer = malloc(PLANETS_BUFFER_SIZE);
+    int length = 0;
 
-    iflagret = swe_calc_ut(tjd_ut, p, iflag, x, serr);
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
+    julian_day = calculate_julian_day(year, month, day, hour, minute, second);
 
-    if (iflagret > 0 && (iflagret & SEFLG_SWIEPH))
-    {
-      swe_get_planet_name(p, snam);
-      length += snprintf(Buffer + length, 50000 - length,
-                         " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s", 
-                         p, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+    length += snprintf(buffer + length, PLANETS_BUFFER_SIZE - length,
+        "{ \"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, "
+        "\"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %.6f }, "
+        "\"planets\": [ ",
+        year, month, day, hour, minute, second, julian_day);
+
+    for (int planet = SE_SUN; planet < SE_NPLANETS; planet++) {
+        if (planet == SE_EARTH) continue;
+        
+        const char *separator = (planet == SE_NPLANETS - 1) ? " " : ", ";
+        result_flags = swe_calc_ut(julian_day, planet, calculation_flags, coordinates, error_msg);
+        swe_get_planet_name(planet, planet_name);
+
+        if (result_flags > 0 && (result_flags & SEFLG_SWIEPH)) {
+            length += format_planet_json(buffer + length, PLANETS_BUFFER_SIZE - length,
+                planet, planet_name, coordinates, result_flags, NULL, separator);
+        } else {
+            length += format_planet_json(buffer + length, PLANETS_BUFFER_SIZE - length,
+                planet, planet_name, NULL, result_flags, error_msg, separator);
+        }
     }
-    else
-    {
-      swe_get_planet_name(p, snam);
-      length += snprintf(Buffer + length, 50000 - length,
-                         " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }%s", 
-                         p, snam, iflagret, serr, sChar);
-    }
-  }
 
-  length += snprintf(Buffer + length, 50000 - length, "] }");
-  free(sChar);
-  return Buffer;
+    length += snprintf(buffer + length, PLANETS_BUFFER_SIZE - length, "] }");
+    return buffer;
 }
 
 /**
  * @brief Calculate house cusps and angles only (without planets)
- * @param year Year (1800-2400)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23)
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @param lonG Longitude degrees
- * @param lonM Longitude minutes
- * @param lonS Longitude seconds
- * @param lonEW Longitude direction ("E" or "W")
- * @param latG Latitude degrees
- * @param latM Latitude minutes
- * @param latS Latitude seconds
- * @param latNS Latitude direction ("N" or "S")
- * @param iHouse House system character (P=Placidus, K=Koch, etc.)
- * @return JSON string containing house cusps and angles
  */
 EMSCRIPTEN_KEEPALIVE
-const char *getHouses(int year, int month, int day, int hour, int minute, int second, int lonG, int lonM, int lonS, char *lonEW, int latG, int latM, int latS, char *latNS, char *iHouse)
+const char *getHouses(int year, int month, int day, int hour, int minute, int second, 
+                     int lonG, int lonM, int lonS, char *lonEW, 
+                     int latG, int latM, int latS, char *latNS, char *iHouse)
 {
-  double jut = 0.0;
-  double tjd_ut, lon, lat;
-  double cusp[12 + 1];
-  double ascmc[10];
-  long iflag;
-  int i;
-  int round_flag = 0;
-  char *Buffer = malloc(10000);
-  int length = 0;
-  char *sChar = malloc(3);
-
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
-
-  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
-
-  lon = lonG + lonM / 60.0 + lonS / 3600.0;
-  if (*lonEW == 'W') lon = -lon;
-  lat = latG + latM / 60.0 + latS / 3600.0;
-  if (*latNS == 'S') lat = -lat;
-
-  swe_houses_ex(tjd_ut, iflag, lat, lon, (int)*iHouse, cusp, ascmc);
-
-  length += snprintf(Buffer + length, 10000 - length, "{ ");
-  length += snprintf(Buffer + length, 10000 - length,
-                     "\"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %f }, ", 
-                     year, month, day, hour, minute, second, tjd_ut);
-  
-  length += snprintf(Buffer + length, 10000 - length, "\"ascmc\": [ ");
-  length += snprintf(Buffer + length, 10000 - length,
-                     "{ \"name\": \"Asc\", \"long\": %f, \"long_s\": \"%s\" }, ", 
-                     ascmc[0], dms(ascmc[0], round_flag | BIT_ZODIAC));
-  length += snprintf(Buffer + length, 10000 - length,
-                     "{ \"name\": \"MC\", \"long\": %f, \"long_s\": \"%s\" } ", 
-                     ascmc[1], dms(ascmc[1], round_flag | BIT_ZODIAC));
-  length += snprintf(Buffer + length, 10000 - length, "], ");
-
-  length += snprintf(Buffer + length, 10000 - length, "\"houses\": [ ");
-  for (i = 1; i <= 12; i++)
-  {
-    strcpy(sChar, ", ");
-    if (i == 12) strcpy(sChar, " ");
+    double julian_day, longitude, latitude;
+    double house_cusps[13], angles[10];
+    long calculation_flags;
     
-    length += snprintf(Buffer + length, 10000 - length,
-                       "{ \"name\": \"%d\", \"long\": %f, \"long_s\": \"%s\" }%s ", 
-                       i, cusp[i], dms(cusp[i], round_flag | BIT_ZODIAC), sChar);
-  }
-  length += snprintf(Buffer + length, 10000 - length, "] }");
+    char *buffer = malloc(HOUSES_BUFFER_SIZE);
+    int length = 0;
 
-  free(sChar);
-  return Buffer;
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
+    julian_day = calculate_julian_day(year, month, day, hour, minute, second);
+
+    convert_coordinates(lonG, lonM, lonS, lonEW, &longitude);
+    convert_coordinates(latG, latM, latS, latNS, &latitude);
+
+    swe_houses_ex(julian_day, calculation_flags, latitude, longitude, 
+                  (int)*iHouse, house_cusps, angles);
+
+    length += snprintf(buffer + length, HOUSES_BUFFER_SIZE - length,
+        "{ \"initDate\": { \"year\": %d, \"month\": %d, \"day\": %d, "
+        "\"hour\": %d, \"minute\": %d, \"second\": %d, \"jd_ut\": %.6f }, "
+        "\"ascmc\": [ "
+        "{ \"name\": \"Asc\", \"long\": %.6f, \"long_s\": \"%s\" }, "
+        "{ \"name\": \"MC\", \"long\": %.6f, \"long_s\": \"%s\" } ], "
+        "\"houses\": [ ",
+        year, month, day, hour, minute, second, julian_day,
+        angles[0], format_degrees(angles[0], BIT_ZODIAC),
+        angles[1], format_degrees(angles[1], BIT_ZODIAC));
+
+    for (int house = 1; house <= 12; house++) {
+        const char *separator = (house == 12) ? " " : ", ";
+        length += snprintf(buffer + length, HOUSES_BUFFER_SIZE - length,
+            "{ \"name\": \"%d\", \"long\": %.6f, \"long_s\": \"%s\" }%s ",
+            house, house_cusps[house], format_degrees(house_cusps[house], BIT_ZODIAC), separator);
+    }
+    
+    length += snprintf(buffer + length, HOUSES_BUFFER_SIZE - length, "] }");
+    return buffer;
 }
 
 /**
  * @brief Convert decimal degrees to degrees/minutes/seconds format
- * @param degrees Decimal degrees
- * @param format Format flags (BIT_ZODIAC for zodiac signs, etc.)
- * @return Formatted string representation
  */
 EMSCRIPTEN_KEEPALIVE
 const char *degreesToDMS(double degrees, int format)
 {
-  char *Buffer = malloc(100);
-  const char *result = dms(degrees, format);
-  strcpy(Buffer, result);
-  return Buffer;
+    char *buffer = malloc(100);
+    const char *result = format_degrees(degrees, format);
+    strcpy(buffer, result);
+    return buffer;
 }
 
 /**
  * @brief Calculate Julian Day for a given date/time
- * @param year Year (1800-2400)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23)
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @return Julian Day (as JSON string for consistency)
  */
 EMSCRIPTEN_KEEPALIVE
 const char *getJulianDay(int year, int month, int day, int hour, int minute, int second)
 {
-  double jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  double tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
-  
-  char *Buffer = malloc(500);
-  snprintf(Buffer, 500, 
-           "{ \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, \"minute\": %d, \"second\": %d, \"julian_day\": %f }", 
-           year, month, day, hour, minute, second, tjd_ut);
-  
-  return Buffer;
+    double julian_day = calculate_julian_day(year, month, day, hour, minute, second);
+    char *buffer = malloc(500);
+    
+    snprintf(buffer, 500,
+        "{ \"year\": %d, \"month\": %d, \"day\": %d, \"hour\": %d, "
+        "\"minute\": %d, \"second\": %d, \"julian_day\": %.6f }",
+        year, month, day, hour, minute, second, julian_day);
+    
+    return buffer;
 }
 
 /**
  * @brief Calculate position for a single planet
- * @param planet_id Planet number (0=Sun, 1=Moon, etc.)
- * @param year Year (1800-2400)
- * @param month Month (1-12)
- * @param day Day (1-31)
- * @param hour Hour (0-23)
- * @param minute Minute (0-59)
- * @param second Second (0-59)
- * @return JSON string containing single planet position
  */
 EMSCRIPTEN_KEEPALIVE
 const char *getPlanet(int planet_id, int year, int month, int day, int hour, int minute, int second)
 {
-  char snam[40], serr[AS_MAXCH];
-  double jut = 0.0;
-  double tjd_ut, x[6];
-  long iflag, iflagret;
-  int round_flag = 0;
-  char *Buffer = malloc(1000);
+    char planet_name[40], error_msg[AS_MAXCH];
+    double julian_day, coordinates[6];
+    long calculation_flags, result_flags;
+    char *buffer = malloc(SINGLE_BUFFER_SIZE);
 
-  swe_set_ephe_path("eph");
-  iflag = SEFLG_SWIEPH | SEFLG_SPEED;
+    swe_set_ephe_path("eph");
+    calculation_flags = SEFLG_SWIEPH | SEFLG_SPEED;
+    julian_day = calculate_julian_day(year, month, day, hour, minute, second);
 
-  jut = (double)hour + (double)minute / 60 + (double)second / 3600;
-  tjd_ut = swe_julday(year, month, day, jut, SE_GREG_CAL);
+    result_flags = swe_calc_ut(julian_day, planet_id, calculation_flags, coordinates, error_msg);
+    swe_get_planet_name(planet_id, planet_name);
 
-  iflagret = swe_calc_ut(tjd_ut, planet_id, iflag, x, serr);
-  swe_get_planet_name(planet_id, snam);
+    if (result_flags > 0 && (result_flags & SEFLG_SWIEPH)) {
+        snprintf(buffer, SINGLE_BUFFER_SIZE,
+            "{ \"index\": %d, \"name\": \"%s\", \"long\": %.6f, \"lat\": %.6f, "
+            "\"distance\": %.9f, \"speed\": %.6f, \"long_s\": \"%s\", "
+            "\"jd_ut\": %.6f, \"iflagret\": %ld, \"error\": false }",
+            planet_id, planet_name, coordinates[0], coordinates[1], coordinates[2], coordinates[3],
+            format_degrees(coordinates[0], BIT_ZODIAC), julian_day, result_flags);
+    } else {
+        snprintf(buffer, SINGLE_BUFFER_SIZE,
+            "{ \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, "
+            "\"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"jd_ut\": %.6f, "
+            "\"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }",
+            planet_id, planet_name, julian_day, result_flags, error_msg);
+    }
 
-  if (iflagret > 0 && (iflagret & SEFLG_SWIEPH))
-  {
-    snprintf(Buffer, 1000,
-             "{ \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"jd_ut\": %f, \"iflagret\": %ld, \"error\": false }",
-             planet_id, snam, x[0], x[1], x[2], x[3], dms(x[0], round_flag | BIT_ZODIAC), tjd_ut, iflagret);
-  }
-  else
-  {
-    snprintf(Buffer, 1000,
-             "{ \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"jd_ut\": %f, \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }",
-             planet_id, snam, tjd_ut, iflagret, serr);
-  }
-
-  return Buffer;
+    return buffer;
 }
 
 /**
  * @brief Free memory allocated by other functions
- * @param ptr Pointer to memory to free
  */
 EMSCRIPTEN_KEEPALIVE
 void freeMemory(void *ptr)
 {
-  if (ptr) {
-    free(ptr);
-  }
+    if (ptr) {
+        free(ptr);
+    }
 }
