@@ -2,6 +2,40 @@
 
 A high-performance WebAssembly interface to the Swiss Ephemeris astronomical library, providing precise planetary calculations for web-based astrology applications.
 
+## 📝 Project Description
+
+**sweph-wasm** is a modern WebAssembly implementation of the renowned Swiss Ephemeris library, specifically designed for web-based astrological applications. This project provides a complete, high-precision astronomical calculation engine that runs entirely in the browser, delivering professional-grade astrological computations with arc-second accuracy.
+
+### What Makes This Special
+
+- **Swiss Ephemeris Quality**: Built on the same astronomical engine used by professional astrology software worldwide
+- **Single-File Deployment**: Everything embedded into one JavaScript file with LZ4 compression (~1.9MB)
+- **50+ Celestial Bodies**: Major planets, Moon, Sun, plus 50 numbered asteroids (Ceres, Pallas, Juno, Vesta, etc.)
+- **Complete Astrological Suite**: Planetary positions, house systems, nodes, apsides, aspects, and more
+- **High Precision**: Arc-second accuracy for dates 1800-2400 CE, suitable for research and professional use
+- **Modern Web Standards**: Pure WebAssembly with JSON API, no dependencies, works offline
+- **Comprehensive House Systems**: Placidus, Koch, Whole Sign, Equal, Regiomontanus, Campanus, and more
+
+### Primary Use Cases
+
+- **Professional Astrology Software**: Birth charts, transits, progressions, solar returns
+- **Astrological Research**: Academic and statistical studies with precise calculations  
+- **Mobile Astrology Apps**: Lightweight, fast calculations for iOS/Android web apps
+- **Educational Tools**: Teaching astronomy and astrology with accurate data
+- **API Services**: Backend calculations for astrology websites and services
+- **Personal Projects**: Hobbyist astrology applications and experiments
+
+### Technical Highlights
+
+- **WebAssembly Core**: Compiled with Emscripten for maximum performance
+- **Embedded Ephemeris**: No external file dependencies, works offline
+- **Memory Efficient**: Smart memory management with automatic cleanup
+- **Cross-Platform**: Runs identically on all modern browsers and Node.js
+- **Developer Friendly**: Simple JSON API with comprehensive documentation
+- **Production Ready**: Battle-tested Swiss Ephemeris engine with 25+ years of development
+
+Perfect for developers building astrology applications, researchers needing precise astronomical data, or anyone wanting professional-quality astrological calculations in a modern web environment.
+
 ## 🌟 Features
 
 - **Complete Astrological Calculations**: Planetary positions, house systems, nodes, apsides, and asteroids

@@ -1,29 +1,53 @@
 {
-  "name": "astro-sweph",
-  "version": "1.0.0",
-  "description": "Swiss Ephemeris (Sweph) compiled to WebAssembly for browser and Node.js",
-  "main": "dist/index.js",
-  "browser": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "node scripts/build.js",
-    "prepublishOnly": "npm run build"
-  },
+  "name": "sweph-wasm",
+  "version": "2.0.0",
+  "description": "High-precision Swiss Ephemeris WebAssembly library for professional astrological calculations. Includes 50+ celestial bodies, all house systems, planetary nodes, and asteroids in a single 1.9MB file with arc-second accuracy.",
+  "main": "js/astro-embedded.js",
   "keywords": [
     "astrology",
     "ephemeris",
-    "swiss-ephemeris",
+    "astronomy",
+    "webassembly",
     "wasm",
-    "webassembly"
+    "swiss-ephemeris",
+    "planets",
+    "asteroids",
+    "horoscope",
+    "birth-chart",
+    "house-systems",
+    "planetary-positions",
+    "nodes",
+    "apsides",
+    "celestial-mechanics"
   ],
-  "author": "Your Name",
-  "license": "MIT",
+  "author": "astroahava",
+  "license": "GPL-2.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/astroahava/sweph-wasm.git"
+  },
+  "homepage": "https://github.com/astroahava/sweph-wasm",
+  "bugs": {
+    "url": "https://github.com/astroahava/sweph-wasm/issues"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "files": [
+    "js/astro-embedded.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "cd lib/src && make embedded && make install",
+    "build:dev": "cd lib/src && make development && make install-dev",
+    "clean": "cd lib/src && make clean",
+    "test": "emrun index.html",
+    "verify": "cd lib/src && make verify"
+  },
   "devDependencies": {
-    "copyfiles": "^2.4.1",
-    "mkdirp": "^1.0.4"
-  }
+    "emscripten": "^3.1.0"
+  },
+  "browser": "js/astro-embedded.js",
+  "types": "types/index.d.ts"
 } 
