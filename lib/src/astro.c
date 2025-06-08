@@ -48,7 +48,7 @@
  * - Method 4 (SE_NODBIT_FOPOINT): Focal points instead of aphelia
  * 
  * @section accuracy Accuracy and Date Ranges
- * - Highest accuracy: 1800-2400 CE
+ * - Highest accuracy: 600-2400 CE
  * - Extended range: 3000 BCE - 3000 CE (reduced accuracy)
  * - Positions accurate to arc-seconds for major planets
  * - Houses depend on birth time accuracy
@@ -133,6 +133,72 @@ static const char *zodiac_signs[] = {
     "ar", "ta", "ge", "cn", "le", "vi",
     "li", "sc", "sa", "cp", "aq", "pi"
 };
+
+/**
+ * @brief Escape special characters for JSON strings
+ * @param src Source string to escape
+ * @param dest Destination buffer for escaped string
+ * @param dest_size Size of destination buffer
+ */
+static void escape_json_string(const char *src, char *dest, size_t dest_size)
+{
+    if (!src || !dest || dest_size < 2) {
+        if (dest && dest_size > 0) dest[0] = '\0';
+        return;
+    }
+    
+    size_t src_len = strlen(src);
+    size_t dest_idx = 0;
+    
+    for (size_t i = 0; i < src_len && dest_idx < dest_size - 1; i++) {
+        char c = src[i];
+        
+        // Check if we have enough space for escape sequence
+        if (dest_idx >= dest_size - 3) break;
+        
+        switch (c) {
+            case '"':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = '"';
+                break;
+            case '\\':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = '\\';
+                break;
+            case '\n':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = 'n';
+                break;
+            case '\r':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = 'r';
+                break;
+            case '\t':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = 't';
+                break;
+            case '\b':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = 'b';
+                break;
+            case '\f':
+                dest[dest_idx++] = '\\';
+                dest[dest_idx++] = 'f';
+                break;
+            default:
+                // Handle other control characters
+                if (c >= 0 && c < 32) {
+                    // Replace with space for safety
+                    dest[dest_idx++] = ' ';
+                } else {
+                    dest[dest_idx++] = c;
+                }
+                break;
+        }
+    }
+    
+    dest[dest_idx] = '\0';
+}
 
 /**
  * @brief Convert decimal degrees to degrees/minutes/seconds format
@@ -234,18 +300,24 @@ static int format_planet_json(char *buffer, int buffer_size, int planet_id, cons
                              double *coordinates, long flags, const char *error_msg, 
                              const char *separator)
 {
+    char escaped_name[100];
+    char escaped_error[500];
+    
+    escape_json_string(name, escaped_name, sizeof(escaped_name));
+    
     if (error_msg) {
+        escape_json_string(error_msg, escaped_error, sizeof(escaped_error));
         return snprintf(buffer, buffer_size,
             " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, "
             "\"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, "
             "\"error\": true, \"error_msg\": \"%s\" }%s",
-            planet_id, name, flags, error_msg, separator);
+            planet_id, escaped_name, flags, escaped_error, separator);
     } else {
         return snprintf(buffer, buffer_size,
             " { \"index\": %d, \"name\": \"%s\", \"long\": %.6f, \"lat\": %.6f, "
             "\"distance\": %.9f, \"speed\": %.6f, \"long_s\": \"%s\", \"iflagret\": %ld, "
             "\"error\": false }%s",
-            planet_id, name, coordinates[0], coordinates[1], coordinates[2], coordinates[3],
+            planet_id, escaped_name, coordinates[0], coordinates[1], coordinates[2], coordinates[3],
             format_degrees(coordinates[0], BIT_ZODIAC), flags, separator);
     }
 }
@@ -391,6 +463,11 @@ const char *getPlanetaryNodes(int year, int month, int day, int hour, int minute
                            ascending_node, descending_node, perihelion, aphelion, error_msg);
         swe_get_planet_name(planet, planet_name);
 
+        // Escape strings for JSON
+        char escaped_name[100];
+        char escaped_error[500];
+        escape_json_string(planet_name, escaped_name, sizeof(escaped_name));
+
         if (result >= 0) {
             length += snprintf(buffer + length, buflen - length,
                 " { \"index\": %d, \"name\": \"%s\", "
@@ -403,7 +480,7 @@ const char *getPlanetaryNodes(int year, int month, int day, int hour, int minute
                 "\"aphelion\": { \"long\": %.6f, \"lat\": %.6f, \"distance\": %.9f, "
                 "\"speed_long\": %.6f, \"speed_lat\": %.6f, \"speed_dist\": %.9f, \"long_s\": \"%s\" }, "
                 "\"error\": false }%s",
-                planet, planet_name,
+                planet, escaped_name,
                 ascending_node[0], ascending_node[1], ascending_node[2], ascending_node[3], ascending_node[4], ascending_node[5], 
                 format_degrees(ascending_node[0], BIT_ZODIAC),
                 descending_node[0], descending_node[1], descending_node[2], descending_node[3], descending_node[4], descending_node[5], 
@@ -414,9 +491,10 @@ const char *getPlanetaryNodes(int year, int month, int day, int hour, int minute
                 format_degrees(aphelion[0], BIT_ZODIAC),
                 separator);
         } else {
+            escape_json_string(error_msg, escaped_error, sizeof(escaped_error));
             length += snprintf(buffer + length, buflen - length,
                 " { \"index\": %d, \"name\": \"%s\", \"error\": true, \"error_msg\": \"%s\" }%s",
-                planet, planet_name, error_msg, separator);
+                planet, escaped_name, escaped_error, separator);
         }
     }
 
@@ -487,7 +565,7 @@ const char *getSinglePlanetNodes(int planet_id, double julian_day_et, int method
  * Asteroids are numbered sequentially starting from 1 (Ceres), 2 (Pallas), 3 (Juno), etc.
  * The function can handle up to 1000 asteroids efficiently.
  * 
- * @param year Year (1800-2400 for best accuracy)
+ * @param year Year (600-2400 for best accuracy)
  * @param month Month (1-12)
  * @param day Day (1-31)
  * @param hour Hour (0-23) in Universal Time
@@ -587,18 +665,24 @@ const char *getAsteroids(int year, int month, int day, int hour, int minute, int
       snprintf(snam, sizeof(snam), "Asteroid_%d", ast_num);
     }
 
+    // Escape strings for JSON
+    char escaped_name[100];
+    char escaped_error[500];
+    escape_json_string(snam, escaped_name, sizeof(escaped_name));
+
     if (iflagret >= 0 && (iflagret & SEFLG_SWIEPH))
     {
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s",
-                         ast_num, snam, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+                         ast_num, escaped_name, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
       calculated_count++;
     }
     else
     {
+      escape_json_string(serr, escaped_error, sizeof(escaped_error));
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }%s",
-                         ast_num, snam, iflagret, serr, sChar);
+                         ast_num, escaped_name, iflagret, escaped_error, sChar);
       error_count++;
     }
 
@@ -626,7 +710,7 @@ const char *getAsteroids(int year, int month, int day, int hour, int minute, int
  * by their catalog numbers. More efficient than getAsteroids() when you only
  * need specific asteroids rather than a range.
  * 
- * @param year Year (1800-2400)
+ * @param year Year (600-2400)
  * @param month Month (1-12)
  * @param day Day (1-31)
  * @param hour Hour (0-23) in Universal Time
@@ -712,18 +796,24 @@ const char *getSpecificAsteroids(int year, int month, int day, int hour, int min
       snprintf(snam, sizeof(snam), "Asteroid_%d", ast_num);
     }
 
+    // Escape strings for JSON
+    char escaped_name[100];
+    char escaped_error[500];
+    escape_json_string(snam, escaped_name, sizeof(escaped_name));
+
     if (iflagret >= 0 && (iflagret & SEFLG_SWIEPH))
     {
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": %f, \"lat\": %f, \"distance\": %f, \"speed\": %f, \"long_s\": \"%s\", \"iflagret\": %ld, \"error\": false }%s",
-                         ast_num, snam, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
+                         ast_num, escaped_name, x[0], x[1], x[2], x[3], format_degrees(x[0], round_flag | BIT_ZODIAC), iflagret, sChar);
       calculated_count++;
     }
     else
     {
+      escape_json_string(serr, escaped_error, sizeof(escaped_error));
       length += snprintf(Buffer + length, buflen - length,
                          " { \"index\": %d, \"name\": \"%s\", \"long\": 0.0, \"lat\": 0.0, \"distance\": 0.0, \"speed\": 0.0, \"long_s\": \"\", \"iflagret\": %ld, \"error\": true, \"error_msg\": \"%s\" }%s",
-                         ast_num, snam, iflagret, serr, sChar);
+                         ast_num, escaped_name, iflagret, escaped_error, sChar);
       error_count++;
     }
 
@@ -773,7 +863,7 @@ const char *getEphemerisInfo(int buflen)
   length += snprintf(Buffer + length, buflen - length, 
                      "\"ephemeris_path\": \"%s\", ", swe_get_library_path(path_buffer));
   length += snprintf(Buffer + length, buflen - length,
-                     "\"date_range\": { \"start\": \"1800-01-01\", \"end\": \"2400-01-01\" }, ");
+                     "\"date_range\": { \"start\": \"0600-01-01\", \"end\": \"2400-01-01\" }, ");
   length += snprintf(Buffer + length, buflen - length,
                      "\"files_loaded\": \"VFS\", ");
   length += snprintf(Buffer + length, buflen - length,

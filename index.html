@@ -74,7 +74,7 @@
     <main>
       <div class="text-center" style="margin:50px auto;max-width:700px;">
         <h2>Sweph-Wasm <span class="badge bg-success">Single File</span></h2>
-        <p class="lead">Complete Swiss Ephemeris in a single 6.1MB file. All planets, asteroids 5-50, and houses for dates from 1800 to 2400.</p>
+        <p class="lead">Complete Swiss Ephemeris in a single 6.1MB file. All planets and houses for dates 600-2400, asteroids 5-50 for dates 1504-2400.</p>
         <div class="alert alert-success" role="alert">
           <strong>✅ Optimized Single File Build:</strong><br>
           • One file: <code>astro-embedded.js</code> (6.1MB)<br>
@@ -94,10 +94,10 @@
             <li class="list-group-item d-flex justify-content-between lh-sm">
               <div class="col-sm-5">
                 <h6 class="my-0">Date</h6>
-                <small class="text-muted">Range years 1800 - 2400</small>
+                <small class="text-muted">Range years 600 - 2400</small>
               </div>
               <div class="col-sm-7">
-                <input type="date" id="initDate" class="form-control" min="1800-01-01" max="2040-12-31"
+                <input type="date" id="initDate" class="form-control" min="0600-01-01" max="2400-12-31"
                   pattern="\d{4}-\d{2}-\d{2}" required />
               </div>
             </li>
@@ -242,7 +242,8 @@
             <li class="list-group-item d-flex justify-content-between lh-sm">
               <div class="col-sm-5">
                 <h6 class="my-0">Calculate Asteroids</h6>
-                <small class="text-muted">Asteroids 5-50 included in this build</small>
+                <small class="text-muted">Asteroids 5-50 included in this build<br>
+                <strong>Note:</strong> Available for dates 1504-2400 only</small>
               </div>
               <div class="col-sm-7">
                 <div class="form-check" style="margin-top: 8px;">

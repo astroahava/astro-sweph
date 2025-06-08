@@ -76,6 +76,43 @@ $(document).ready(function () {
         }
     });
 
+    // Check asteroid availability when date changes
+    $("#initDate").on("change", function() {
+        checkAsteroidAvailability();
+    });
+
+    function checkAsteroidAvailability() {
+        const selectedDate = $("#initDate").val();
+        if (selectedDate) {
+            const year = moment(selectedDate, "YYYY-MM-DD").year();
+            const asteroidCheckbox = $("#calculateAsteroids");
+            const asteroidOptions = $("#asteroidOptions");
+            
+            if (year < 1504) {
+                // Disable asteroids for dates before 1504
+                asteroidCheckbox.prop("checked", false);
+                asteroidCheckbox.prop("disabled", true);
+                asteroidOptions.hide();
+                
+                // Show a warning
+                if ($("#asteroidDateWarning").length === 0) {
+                    asteroidCheckbox.closest("li").append(
+                        '<div id="asteroidDateWarning" class="alert alert-warning alert-sm mt-2" style="font-size: 12px; padding: 8px;">' +
+                        '<strong>Note:</strong> Asteroids are not available for dates before 1504. Please select a later date to enable asteroid calculations.' +
+                        '</div>'
+                    );
+                }
+            } else {
+                // Enable asteroids for dates after 1504
+                asteroidCheckbox.prop("disabled", false);
+                $("#asteroidDateWarning").remove();
+            }
+        }
+    }
+
+    // Initial check
+    checkAsteroidAvailability();
+
     // Handle asteroid mode changes
     $("input[name='asteroidMode']").on("change", function() {
         const mode = $(this).val();
@@ -236,7 +273,7 @@ function validateInput() {
         return jsonError;
     } else {
         var dtYear = moment($("#initDate").val(), "YYYY-MM-DD").year();
-        if (dtYear < 1800 || dtYear > 2400) {
+        if (dtYear < 600 || dtYear > 2400) {
             jsonError.error = true;
             jsonError.message = "Invalid date";
             return jsonError;
@@ -271,6 +308,14 @@ function validateInput() {
 
     // Asteroid validation
     if ($("#calculateAsteroids").is(":checked")) {
+        // Check if date is within asteroid ephemeris range (1504-2400)
+        var dtYear = moment($("#initDate").val(), "YYYY-MM-DD").year();
+        if (dtYear < 1504) {
+            jsonError.error = true;
+            jsonError.message = "Asteroids are only available for dates from 1504 onwards (current: " + dtYear + ")";
+            return jsonError;
+        }
+
         const asteroidMode = $("input[name='asteroidMode']:checked").val();
         if (asteroidMode === "popular") {
             const selectedCount = $(".asteroid-preset.selected").length;
