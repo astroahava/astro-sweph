@@ -1,0 +1,103 @@
+# Swiss Ephemeris Source .gitignore
+# Generated build artifacts and temporary files
+
+# Compiled object files
+*.o
+*.obj
+*.lo
+
+# Compiled static libraries
+*.a
+*.lib
+
+# Compiled shared libraries
+*.so
+*.so.*
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+swetests
+swevents
+swemini
+
+# Vim temporary and swap files
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+
+# Emacs temporary files
+*~
+\#*\#
+.\#*
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*.tmp
+
+# Inactive/disabled files
+*.inactive
+*.disabled
+*.old
+
+# Log files
+*.log
+
+# Core dumps
+core
+core.*
+
+# Dependency directories (if any)
+.deps/
+.libs/
+
+# Autotools generated files (if using autotools)
+Makefile.in
+configure
+config.h.in
+config.h
+config.status
+config.log
+aclocal.m4
+autom4te.cache/
+
+# CMake generated files (if using CMake)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+
+# Package config files
+*.pc
+
+# Documentation build artifacts
+*.pdf
+*.dvi
+*.ps
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+
+# Profiling data
+gmon.out
+*.gcov
+*.gcda
+*.gcno 

@@ -1,4 +1,61 @@
+# Build artifacts and compiled files
 *.o
+*.obj
 *.a
+*.lib
+*.so
+*.dylib
+*.dll
+
+# Swiss Ephemeris library artifacts
 libswe*
 /astro
+
+# WebAssembly build outputs
+*.js
+*.wasm
+*.data
+astro-embedded*
+astro-dev*
+
+# Emscripten build artifacts
+*.bc
+*.mem
+
+# System files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# Editor temporary files
+*~
+*.swp
+*.swo
+.*.swp
+.*.swo
+\#*\#
+.\#*
+
+# Backup files
+*.bak
+*.backup
+*.orig
+*.tmp
+
+# Log files
+*.log
+
+# Core dumps
+core
+core.*
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary directories
+temp-*
+tmp/

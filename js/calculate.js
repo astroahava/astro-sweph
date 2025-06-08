@@ -357,10 +357,10 @@ function createResult(jsonResult) {
     sHtml = sHtml + "<td colspan='5'>    </td>";
     sHtml = sHtml + "</tr>";
 
-    for (var i = 0; i < jsonResult.house.length; i++) {
+    for (var i = 0; i < jsonResult.houses.length; i++) {
         sHtml = sHtml + "<tr>";
-        sHtml = sHtml + "<td>House " + jsonResult.house[i].name + "</td>";
-        sHtml = sHtml + "<td>" + jsonResult.house[i].long_s + "</td>";
+        sHtml = sHtml + "<td>House " + jsonResult.houses[i].name + "</td>";
+        sHtml = sHtml + "<td>" + jsonResult.houses[i].long_s + "</td>";
         sHtml = sHtml + "<td></td>";
         sHtml = sHtml + "<td></td>";
         sHtml = sHtml + "<td></td>";

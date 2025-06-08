@@ -1,95 +1,195 @@
-# Swiss Ephemeris WebAssembly Build
-# Optimized for single-file deployment with all ephemeris data embedded
+# Swiss Ephemeris WebAssembly Build System
+# Optimized for single-file deployment with embedded ephemeris data
+#
+# This Makefile builds the Swiss Ephemeris library as a WebAssembly module
+# with all ephemeris files embedded for standalone deployment.
+#
+# Requirements:
+#   - Emscripten SDK (https://emscripten.org/)
+#   - Swiss Ephemeris source code (lib/sweph/src/)
+#   - Ephemeris data files (eph/*.se1)
+#
+# Main targets:
+#   - embedded: Single-file WASM with all data (RECOMMENDED)
+#   - development: Multi-file build for debugging
+#   - install: Deploy to js/ directory
+#   - clean: Remove build artifacts
 
+# Build configuration
 CC = emcc
-CFLAGS = -Wall -fPIC -O2 -DUSECASE=2 -I../sweph/src
-CFLAGS_RELEASE = -Wall -fPIC -O3 -DUSECASE=2 -DNDEBUG -I../sweph/src
+SRCDIR = .
+SWEPHDIR = ../sweph/src
+EPHDIR = eph
+JSDIR = ../../js
+
+# Compiler flags
+CFLAGS_BASE = -Wall -fPIC -I$(SWEPHDIR)
+CFLAGS_DEBUG = $(CFLAGS_BASE) -O1 -g -DDEBUG
+CFLAGS_RELEASE = $(CFLAGS_BASE) -O3 -DNDEBUG
+
+# Libraries
 LIBS = -lm -ldl
 
+# WebAssembly configuration
+WASM_FLAGS_BASE = -s WASM=1 \
+	-s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString", "stringToUTF8", "lengthBytesUTF8"]' \
+	-s EXPORTED_FUNCTIONS='["_test", "_get", "_getPlanets", "_getHouses", "_degreesToDMS", "_getJulianDay", "_getPlanet", "_getPlanetaryNodes", "_getSinglePlanetNodes", "_getAsteroids", "_getSpecificAsteroids", "_setEphemerisPath", "_getEphemerisInfo", "_freeMemory", "_malloc", "_free"]'
+
+WASM_FLAGS_EMBEDDED = $(WASM_FLAGS_BASE) \
+	-s FORCE_FILESYSTEM=1 \
+	-s SINGLE_FILE=1 \
+	-s WASM_ASYNC_COMPILATION=0 \
+	-s ALLOW_MEMORY_GROWTH=0 \
+	-s INITIAL_MEMORY=67108864 \
+	-s STACK_SIZE=1048576 \
+	-s NO_EXIT_RUNTIME=1 \
+	-s ASSERTIONS=0 \
+	-s DISABLE_EXCEPTION_CATCHING=1 \
+	-s TEXTDECODER=0 \
+	-s ABORTING_MALLOC=0 \
+	-s SUPPORT_LONGJMP=0 \
+	-s LZ4=1
+
+WASM_FLAGS_DEV = $(WASM_FLAGS_BASE) \
+	-s FORCE_FILESYSTEM=1 \
+	-s ASSERTIONS=1 \
+	-s SAFE_HEAP=1
+
+# File lists
+EPHEMERIS_FILES = $(wildcard $(EPHDIR)/*.se1)
+EMBED_FLAGS = $(foreach file,$(EPHEMERIS_FILES),--embed-file $(file))
+
 # Default target
-all: astro-embedded
+.DEFAULT_GOAL := embedded
+
+# Main targets
+all: embedded
 
 # Object files
 astro.o: astro.c
-	$(CC) $(CFLAGS) -c astro.c -o astro.o
+	@echo "Compiling astro.c (debug)..."
+	$(CC) $(CFLAGS_DEBUG) -c $< -o $@
 
 astro-release.o: astro.c
-	$(CC) $(CFLAGS_RELEASE) -c astro.c -o astro-release.o
+	@echo "Compiling astro.c (release)..."
+	$(CC) $(CFLAGS_RELEASE) -c $< -o $@
 
 # Swiss Ephemeris library
-libswe.a:
-	$(MAKE) -C ../sweph/src libswe.a CC="$(CC)" CFLAGS="$(CFLAGS)"
-	cp ../sweph/src/libswe.a .
+libswe.a: $(SWEPHDIR)/*.c $(SWEPHDIR)/*.h
+	@echo "Building Swiss Ephemeris library (debug)..."
+	$(MAKE) -C $(SWEPHDIR) libswe.a CC="$(CC)" CFLAGS="$(CFLAGS_DEBUG)"
+	cp $(SWEPHDIR)/libswe.a .
 
-libswe-release.a:
-	$(MAKE) -C ../sweph/src libswe.a CC="$(CC)" CFLAGS="$(CFLAGS_RELEASE)"
-	cp ../sweph/src/libswe.a libswe-release.a
+libswe-release.a: $(SWEPHDIR)/*.c $(SWEPHDIR)/*.h
+	@echo "Building Swiss Ephemeris library (release)..."
+	$(MAKE) -C $(SWEPHDIR) libswe.a CC="$(CC)" CFLAGS="$(CFLAGS_RELEASE)"
+	cp $(SWEPHDIR)/libswe.a $@
 
-# Single file embedded build (RECOMMENDED)
-# Embeds all 49 ephemeris files into a single JavaScript file with maximum compression
-astro-embedded: astro-release.o libswe-release.a
-	@echo "Building ultra-compressed single file with all ephemeris files embedded..."
-	@echo "Ephemeris data size: $$(du -sh eph/)"
-	@echo "Embedding $$(find eph -name "*.se1" | wc -l) ephemeris files..."
+# Single-file embedded build (RECOMMENDED)
+# Creates a standalone JavaScript file with all ephemeris data embedded
+# Optimized for production deployment with maximum compression
+embedded: astro-embedded.js
+
+astro-embedded.js: astro-release.o libswe-release.a $(EPHEMERIS_FILES)
+	@echo "Building ultra-compressed single-file WebAssembly module..."
+	@echo "📊 Ephemeris files: $(words $(EPHEMERIS_FILES))"
+	@echo "📊 Total ephemeris size: $$(du -sh $(EPHDIR) | cut -f1)"
+	@echo "🔨 Embedding data and optimizing..."
 	$(CC) $(CFLAGS_RELEASE) astro-release.o \
-		$(shell find eph -name "*.se1" -exec echo "--embed-file {}" \;) \
-		-o astro-embedded.js \
-		-s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap", "UTF8ToString", "stringToUTF8", "lengthBytesUTF8"]' \
-		-s EXPORTED_FUNCTIONS='["_test", "_get", "_getPlanets", "_getHouses", "_degreesToDMS", "_getJulianDay", "_getPlanet", "_getPlanetaryNodes", "_getSinglePlanetNodes", "_getAsteroids", "_getSpecificAsteroids", "_setEphemerisPath", "_getEphemerisInfo", "_freeMemory", "_malloc", "_free"]' \
-		-s WASM_ASYNC_COMPILATION=0 \
-		-s FORCE_FILESYSTEM=1 -s SINGLE_FILE=1 \
-		-O1 \
-		-s TEXTDECODER=0 \
-		-s ABORTING_MALLOC=0 \
-		-s ALLOW_MEMORY_GROWTH=0 \
-		-s INITIAL_MEMORY=67108864 \
-		-s STACK_SIZE=1048576 \
-		-s NO_EXIT_RUNTIME=1 \
-		-s ASSERTIONS=0 \
-		-s DISABLE_EXCEPTION_CATCHING=1 \
-		-s FILESYSTEM=1 \
-		-s SUPPORT_LONGJMP=0 \
-		-s LZ4=1 \
+		$(EMBED_FLAGS) \
+		-o $@ \
+		$(WASM_FLAGS_EMBEDDED) \
 		-L. -lswe-release $(LIBS)
-	@echo "✅ Ultra-compressed single file build complete:"
-	@ls -lh astro-embedded.js
-	@echo "✅ No separate .wasm or .data files needed"
-	@echo "✅ Ready for deployment"
+	@echo "✅ Single-file build complete:"
+	@echo "   📁 File: $@ ($$(du -sh $@ | cut -f1))"
+	@echo "   🚀 Ready for deployment (no additional files needed)"
 
+# Development build (for testing and debugging)
+# Creates separate .js/.wasm/.data files for easier debugging
+development: astro-dev.js
 
+astro-dev.js: astro.o libswe.a $(EPHEMERIS_FILES)
+	@echo "Building development version with debug symbols..."
+	$(CC) $(CFLAGS_DEBUG) astro.o \
+		--preload-file $(EPHDIR) \
+		-o $@ \
+		$(WASM_FLAGS_DEV) \
+		-L. -lswe $(LIBS)
+	@echo "✅ Development build complete:"
+	@echo "   📁 Files: $@ + astro-dev.wasm + astro-dev.data"
+	@echo "   🐛 Debug symbols included"
 
-# Install to js directory
-install: astro-embedded
-	@echo "Installing to js directory..."
-	mv astro-embedded.js ../../js/
-	@echo "✅ Installed: js/astro-embedded.js ($$(du -sh ../../js/astro-embedded.js | cut -f1))"
+# Install to target directory
+install: embedded
+	@echo "📦 Installing to $(JSDIR)/"
+	@mkdir -p $(JSDIR)
+	cp astro-embedded.js $(JSDIR)/
+	@echo "✅ Installed: $(JSDIR)/astro-embedded.js ($$(du -sh $(JSDIR)/astro-embedded.js | cut -f1))"
+	@echo "🌐 Ready for web deployment"
 
+# Development install (useful for testing)
+install-dev: development
+	@echo "📦 Installing development build to $(JSDIR)/"
+	@mkdir -p $(JSDIR)
+	cp astro-dev.* $(JSDIR)/
+	@echo "✅ Installed development files to $(JSDIR)/"
 
+# Verification and info
+verify: embedded
+	@echo "🔍 Verifying embedded build..."
+	@echo "File size: $$(du -sh astro-embedded.js | cut -f1)"
+	@echo "Ephemeris files embedded: $(words $(EPHEMERIS_FILES))"
+	@if [ -f astro-embedded.js ]; then \
+		echo "✅ Build verification passed"; \
+	else \
+		echo "❌ Build verification failed"; \
+		exit 1; \
+	fi
 
-# Development build (for testing, creates separate files)
-astro-dev: astro.o libswe.a
-	@echo "Building development version..."
-	$(CC) $(CFLAGS) --preload-file eph -o astro-dev.js astro.o \
-		-s WASM=1 -s EXPORTED_RUNTIME_METHODS='["ccall", "cwrap"]' \
-		-s FORCE_FILESYSTEM=1 -L. -lswe $(LIBS)
-	@echo "Development build complete (separate .js/.wasm/.data files)"
-
-# Clean build artifacts
-clean:
-	rm -f *.o *.a *.js *.wasm *.data *.br *.xz
-	rm -rf eph-*
-
-# Show build information
 info:
-	@echo "=== Swiss Ephemeris WASM Build Information ==="
-	@echo "Ephemeris files: $$(find eph -name "*.se1" | wc -l)"
-	@echo "Ephemeris size: $$(du -sh eph/)"
+	@echo "=== Swiss Ephemeris WebAssembly Build Information ==="
 	@echo ""
-	@echo "Available targets:"
-	@echo "  astro-embedded       - Single file with all ephemeris data (RECOMMENDED)"
-	@echo "  astro-dev           - Development build with separate files"
-	@echo "  install             - Install embedded version to js/"
-	@echo "  clean               - Clean build artifacts"
-	@echo "  info                - Show this information"
+	@echo "📊 Ephemeris Data:"
+	@echo "   Files: $(words $(EPHEMERIS_FILES))"
+	@echo "   Location: $(EPHDIR)/"
+	@echo "   Total size: $$(du -sh $(EPHDIR) | cut -f1)"
+	@echo ""
+	@echo "🛠️  Build Configuration:"
+	@echo "   Compiler: $(CC)"
+	@echo "   Swiss Ephemeris: $(SWEPHDIR)/"
+	@echo "   Target directory: $(JSDIR)/"
+	@echo ""
+	@echo "🎯 Available Targets:"
+	@echo "   embedded    - Single-file production build (RECOMMENDED)"
+	@echo "   development - Multi-file debug build"
+	@echo "   install     - Install embedded build to $(JSDIR)/"
+	@echo "   install-dev - Install development build to $(JSDIR)/"
+	@echo "   verify      - Verify build integrity"
+	@echo "   clean       - Remove all build artifacts"
+	@echo "   info        - Show this information"
+	@echo ""
+	@echo "💡 Quick start: make embedded && make install"
 
-.PHONY: all install clean info 
+# Cleanup
+clean:
+	@echo "🧹 Cleaning build artifacts..."
+	rm -f *.o *.a *.js *.wasm *.data *.br *.xz
+	rm -rf eph-* temp-*
+	@echo "✅ Cleanup complete"
+
+clean-all: clean
+	@echo "🧹 Deep cleaning (including Swiss Ephemeris)..."
+	$(MAKE) -C $(SWEPHDIR) clean
+	@echo "✅ Deep cleanup complete"
+
+# Help target
+help: info
+
+# Phony targets
+.PHONY: all embedded development install install-dev verify info clean clean-all help
+
+# Dependencies
+astro.o: astro.c
+astro-release.o: astro.c
+astro-embedded.js: astro-release.o libswe-release.a
+astro-dev.js: astro.o libswe.a 
