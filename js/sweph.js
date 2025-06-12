@@ -364,9 +364,21 @@ class SwissEphemeris {
     _handleWorkerError(error) {
         console.error('❌ Worker error:', error);
         
+        let errorMessage = `Worker error: ${error.message}`;
+        
+        // Provide more helpful error messages for common issues
+        if (error.message && error.message.includes('compressed')) {
+            errorMessage = 'Failed to load Swiss Ephemeris: Compressed file could not be loaded. ' +
+                          'This may be due to browser compatibility issues with gzip decompression. ' +
+                          'Please try refreshing the page or use a different browser.';
+        } else if (error.message && error.message.includes('WASM')) {
+            errorMessage = 'Failed to load Swiss Ephemeris: WebAssembly module could not be initialized. ' +
+                          'Please ensure your browser supports WebAssembly and try again.';
+        }
+        
         // Reject all pending calculations
         for (const [id, pending] of this.pendingCalculations) {
-            pending.reject(new Error(`Worker error: ${error.message}`));
+            pending.reject(new Error(errorMessage));
         }
         this.pendingCalculations.clear();
         
@@ -417,6 +429,201 @@ var isModuleLoading = false;
 var moduleLoadPromise = null;
 
 console.log('🔧 Swiss Ephemeris Worker ready (WASM not loaded yet)');
+
+// Client-side decompression function
+async function loadCompressedScript() {
+    try {
+        console.log('🔄 Loading Brotli-compressed WASM script...');
+        
+        // First, try to load a Brotli decompression library
+        const brotliLib = await loadBrotliLibrary();
+        
+        // Fetch compressed file as binary
+        const response = await fetch('astro-embedded.js.gz');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const compressedData = await response.arrayBuffer();
+        console.log(`📦 Loaded astro-embedded.js.gz (${compressedData.byteLength} bytes)`);
+        
+        // Decompress using the library
+        const decompressedData = await brotliLib.decompress(new Uint8Array(compressedData));
+        console.log(`🗜️ Decompressed to ${decompressedData.length} bytes`);
+        
+        // Convert to string and evaluate
+        const jsCode = new TextDecoder().decode(decompressedData);
+        console.log(`📜 JavaScript code: ${jsCode.length} characters`);
+        
+        // Execute the decompressed JavaScript
+        eval(jsCode);
+        console.log('✅ WASM script executed successfully');
+        return;
+        
+    } catch (error) {
+        console.error(`❌ Brotli decompression failed:`, error.message);
+        throw new Error(`Failed to load compressed WASM script: ${error.message}`);
+    }
+}
+
+// Load a lightweight Brotli decompression library
+async function loadBrotliLibrary() {
+    console.log('🔄 Using native browser decompression directly...');
+    // Skip CDN dependency and go straight to native browser support
+    return await loadFallbackBrotliLib();
+}
+
+// Pure JavaScript gzip decoder (simplified implementation)
+async function loadFallbackBrotliLib() {
+    console.log('🔄 Using pure JavaScript gzip decoder...');
+    return {
+        decompress: async (compressedData) => {
+            console.log(`🔍 Attempting to decompress ${compressedData.byteLength} bytes...`);
+            
+            // Check the gzip header
+            const header = new Uint8Array(compressedData.slice(0, 10));
+            console.log('🔍 File header:', Array.from(header).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+            
+            // Verify it's a gzip file (magic number 1f 8b)
+            if (header[0] !== 0x1f || header[1] !== 0x8b) {
+                throw new Error('Not a valid gzip file');
+            }
+            
+            // Try native DecompressionStream first with better error handling
+            if (typeof DecompressionStream !== 'undefined') {
+                try {
+                    console.log('🔄 Trying improved native gzip decompression...');
+                    
+                    // Create a more robust stream approach
+                    const stream = new DecompressionStream('gzip');
+                    const writer = stream.writable.getWriter();
+                    const reader = stream.readable.getReader();
+                    
+                    // Write the data in chunks to avoid issues
+                    const chunkSize = 8192;
+                    const dataArray = new Uint8Array(compressedData);
+                    
+                    (async () => {
+                        try {
+                            for (let offset = 0; offset < dataArray.length; offset += chunkSize) {
+                                const chunk = dataArray.slice(offset, offset + chunkSize);
+                                await writer.write(chunk);
+                            }
+                            await writer.close();
+                        } catch (err) {
+                            await writer.abort(err);
+                        }
+                    })();
+                    
+                    // Read the decompressed data
+                    const chunks = [];
+                    let done = false;
+                    while (!done) {
+                        const { value, done: readerDone } = await reader.read();
+                        done = readerDone;
+                        if (value) {
+                            chunks.push(value);
+                        }
+                    }
+                    
+                    // Combine chunks
+                    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+                    const result = new Uint8Array(totalLength);
+                    let offset = 0;
+                    for (const chunk of chunks) {
+                        result.set(chunk, offset);
+                        offset += chunk.length;
+                    }
+                    
+                    console.log(`✅ Native gzip decompression successful: ${result.length} bytes`);
+                    return result;
+                    
+                } catch (error) {
+                    console.warn('⚠️ Native decompression failed:', error.message);
+                    // Fall through to manual implementation
+                }
+            }
+            
+            // Manual gzip decompression using inflate
+            console.log('🔄 Attempting manual gzip decompression...');
+            return await manualGzipDecompress(new Uint8Array(compressedData));
+        }
+    };
+}
+
+// Manual gzip decompression implementation
+async function manualGzipDecompress(data) {
+    // Parse gzip header
+    let offset = 0;
+    
+    // Check magic number
+    if (data[0] !== 0x1f || data[1] !== 0x8b) {
+        throw new Error('Invalid gzip magic number');
+    }
+    offset += 2;
+    
+    // Check compression method (should be 8 for deflate)
+    if (data[2] !== 8) {
+        throw new Error('Unsupported compression method');
+    }
+    offset += 1;
+    
+    // Read flags
+    const flags = data[3];
+    offset += 1;
+    
+    // Skip modification time (4 bytes), extra flags (1 byte), OS (1 byte)
+    offset += 6;
+    
+    // Handle optional fields based on flags
+    if (flags & 0x04) { // FEXTRA
+        const extraLen = data[offset] | (data[offset + 1] << 8);
+        offset += 2 + extraLen;
+    }
+    
+    if (flags & 0x08) { // FNAME
+        while (data[offset] !== 0) offset++;
+        offset++;
+    }
+    
+    if (flags & 0x10) { // FCOMMENT  
+        while (data[offset] !== 0) offset++;
+        offset++;
+    }
+    
+    if (flags & 0x02) { // FHCRC
+        offset += 2;
+    }
+    
+    // Extract the deflate data (everything except last 8 bytes which are CRC and size)
+    const deflateData = data.slice(offset, data.length - 8);
+    
+    console.log(`🔍 Extracted ${deflateData.length} bytes of deflate data`);
+    
+    // Try to decompress the deflate data using DecompressionStream
+    if (typeof DecompressionStream !== 'undefined') {
+        try {
+            console.log('🔄 Trying deflate decompression on extracted data...');
+            const stream = new DecompressionStream('deflate');
+            const response = new Response(deflateData);
+            const decompressed = response.body.pipeThrough(stream);
+            const result = await new Response(decompressed).arrayBuffer();
+            
+            const resultArray = new Uint8Array(result);
+            console.log(`✅ Manual deflate decompression successful: ${resultArray.length} bytes`);
+            
+            return resultArray;
+        } catch (error) {
+            console.warn('⚠️ Manual deflate failed:', error.message);
+        }
+    }
+    
+    throw new Error('Manual gzip decompression failed - no working deflate implementation');
+}
+
+
+
+
 
 // Handle messages from the main thread
 self.onmessage = function(event) {
@@ -506,55 +713,55 @@ function loadModuleAsync() {
         
         // Configure Module before loading
         self.Module = {
-            locateFile: function(path) {
-                return path;
-            },
-            
-            onRuntimeInitialized: function() {
-                console.log('✅ WASM Runtime initialized');
+    locateFile: function(path) {
+        return path;
+    },
+    
+    onRuntimeInitialized: function() {
+        console.log('✅ WASM Runtime initialized');
                 isModuleLoaded = true;
                 isModuleLoading = false;
-                
-                // Process any pending data
-                if (pendingData) {
+        
+        // Process any pending data
+        if (pendingData) {
                     console.log('🔄 Processing queued calculation...');
-                    processData(pendingData);
-                    pendingData = null;
-                }
+            processData(pendingData);
+            pendingData = null;
+        }
                 
                 resolve();
-            },
-            
-            onAbort: function(what) {
-                console.error('❌ WASM module aborted:', what);
+    },
+    
+    onAbort: function(what) {
+        console.error('❌ WASM module aborted:', what);
                 isModuleLoading = false;
                 isModuleLoaded = false;
                 
-                postMessage(JSON.stringify({
-                    error: true,
+        postMessage(JSON.stringify({
+            error: true,
                     error_msg: 'WASM module failed to load: ' + what
-                }));
+        }));
                 
                 reject(new Error('WASM module aborted: ' + what));
-            },
-            
-            postRun: function() {
-                console.log('🏁 WASM postRun completed');
-                
+    },
+    
+    postRun: function() {
+        console.log('🏁 WASM postRun completed');
+        
                 // Double-check module readiness
                 if (Module.ccall && !isModuleLoaded) {
                     console.log('✅ Module ccall ready, finalizing...');
                     isModuleLoaded = true;
                     isModuleLoading = false;
-                    
-                    if (pendingData) {
-                        processData(pendingData);
-                        pendingData = null;
-                    }
-                }
-            },
             
-            noInitialRun: false,
+            if (pendingData) {
+                processData(pendingData);
+                pendingData = null;
+            }
+        }
+    },
+    
+    noInitialRun: false,
             noExitRuntime: false,  // Allow cleanup
             
             // Memory optimization settings
@@ -562,12 +769,11 @@ function loadModuleAsync() {
             printErr: function() {}, // Disable error output
         };
         
-        // Dynamically import the WASM script
-        try {
-            importScripts('astro-embedded.js');
-            console.log('📜 WASM script imported successfully');
-        } catch (error) {
-            console.error('❌ Failed to import WASM script:', error);
+        // Load and decompress WASM script client-side
+        loadCompressedScript().then(() => {
+            console.log('📜 WASM script loaded and decompressed successfully');
+        }).catch((error) => {
+            console.error('❌ Failed to load WASM script:', error);
             isModuleLoading = false;
             isModuleLoaded = false;
             
@@ -577,7 +783,7 @@ function loadModuleAsync() {
             }));
             
             reject(error);
-        }
+        });
     });
     
     return moduleLoadPromise;

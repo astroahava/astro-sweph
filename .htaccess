@@ -1,0 +1,53 @@
+# Swiss Ephemeris WebAssembly - Network Optimization Configuration
+# Place this file in your web server root directory or the js/ directory
+
+# Enable compression for JavaScript files
+<IfModule mod_deflate.c>
+    # Compress JavaScript files if not pre-compressed
+    <FilesMatch "\.(js)$">
+        SetOutputFilter DEFLATE
+    </FilesMatch>
+</IfModule>
+
+# Serve pre-compressed files when available
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    # Serve Brotli compressed files if available and supported
+    RewriteCond %{HTTP:Accept-Encoding} br
+    RewriteCond %{REQUEST_FILENAME}\.br -f
+    RewriteRule ^(.*)\.js$ $1.js.br [L]
+    
+    # Serve Gzip compressed files if available and supported
+    RewriteCond %{HTTP:Accept-Encoding} gzip
+    RewriteCond %{REQUEST_FILENAME}\.gz -f
+    RewriteRule ^(.*)\.js$ $1.js.gz [L]
+</IfModule>
+
+# Set correct content type and encoding for compressed files
+<IfModule mod_headers.c>
+    # Brotli compressed JavaScript
+    <FilesMatch "\.js\.br$">
+        Header set Content-Type "application/javascript"
+        Header set Content-Encoding "br"
+        Header set Vary "Accept-Encoding"
+    </FilesMatch>
+    
+    # Gzip compressed JavaScript
+    <FilesMatch "\.js\.gz$">
+        Header set Content-Type "application/javascript"
+        Header set Content-Encoding "gzip"
+        Header set Vary "Accept-Encoding"
+    </FilesMatch>
+    
+    # Cache headers for WebAssembly files (1 year cache)
+    <FilesMatch "\.(js|wasm)$">
+        Header set Cache-Control "public, max-age=31536000"
+    </FilesMatch>
+</IfModule>
+
+# MIME type for WebAssembly
+<IfModule mod_mime.c>
+    AddType application/wasm .wasm
+    AddType application/javascript .js
+</IfModule> 
