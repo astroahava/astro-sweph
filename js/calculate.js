@@ -130,6 +130,118 @@ $(document).ready(function () {
         $(".asteroid-preset").removeClass("selected");
     });
 
+    // Memory management utilities using the new SwissEphemeris class
+    window.SwissEphemerisUtils = {
+        // Create a calculator instance for testing
+        createCalculator: function(options = {}) {
+            return new SwissEphemeris({
+                workerPath: 'js/sweph-worker.js',
+                autoCleanup: true, // Manual control for testing
+                memoryOptimized: true,
+                ...options
+            });
+        },
+        
+        // Check calculator status
+        checkStatus: async function() {
+            const calculator = this.createCalculator();
+            try {
+                const status = await calculator.getStatus();
+                console.log('🔍 Calculator Status:', status);
+                return status;
+            } finally {
+                calculator.destroy();
+            }
+        },
+        
+        // Preload WASM module for faster calculations
+        preloadModule: async function() {
+            if (window._globalCalculator) {
+                console.log('ℹ️ Calculator already exists');
+                return;
+            }
+            
+            console.log('🚀 Creating persistent calculator with preloaded module...');
+            window._globalCalculator = this.createCalculator({ autoCleanup: false });
+            
+            try {
+                await window._globalCalculator.preload();
+                console.log('✅ Global calculator ready with preloaded WASM');
+            } catch (error) {
+                console.error('❌ Failed to preload:', error);
+                window._globalCalculator.destroy();
+                delete window._globalCalculator;
+            }
+        },
+        
+        // Use the preloaded calculator for calculations
+        calculateWithPreloaded: async function(params) {
+            if (!window._globalCalculator) {
+                throw new Error('No preloaded calculator. Call preloadModule() first.');
+            }
+            
+            return window._globalCalculator.calculateFull(params);
+        },
+        
+        // Unload the global calculator
+        unloadGlobalCalculator: function() {
+            if (window._globalCalculator) {
+                console.log('🗑️ Destroying global calculator...');
+                window._globalCalculator.destroy();
+                delete window._globalCalculator;
+                console.log('✅ Global calculator destroyed');
+            } else {
+                console.log('ℹ️ No global calculator to destroy');
+            }
+        },
+        
+        // Benchmark memory efficiency
+        benchmarkMemory: async function() {
+            console.log('🏃‍♂️ Starting memory benchmark...');
+            
+            const testParams = {
+                date: '2023-12-25',
+                time: '12:00',
+                longitude: { degrees: 0, minutes: 0, seconds: 0, direction: 'E' },
+                latitude: { degrees: 51, minutes: 30, seconds: 0, direction: 'N' },
+                houseSystem: 'P'
+            };
+            
+            // Test 1: Memory-optimized (auto-cleanup)
+            console.log('📊 Test 1: Memory-optimized mode');
+            const start1 = performance.now();
+            const calc1 = this.createCalculator({ autoCleanup: true, memoryOptimized: true });
+            await calc1.calculate(testParams);
+            const end1 = performance.now();
+            console.log(`⏱️ Memory-optimized: ${(end1 - start1).toFixed(2)}ms`);
+            
+            // Test 2: Speed-optimized (preloaded)
+            console.log('📊 Test 2: Speed-optimized mode');
+            const calc2 = this.createCalculator({ autoCleanup: false });
+            await calc2.preload();
+            
+            const start2 = performance.now();
+            await calc2.calculate(testParams);
+            const end2 = performance.now();
+            console.log(`⏱️ Speed-optimized: ${(end2 - start2).toFixed(2)}ms`);
+            
+            calc2.destroy();
+            
+            console.log('✅ Benchmark complete');
+        }
+    };
+    
+    // Add helpful console message
+    console.log('🌟 Swiss Ephemeris Class Interface available:');
+    console.log('📋 Basic usage:');
+    console.log('  const calc = new SwissEphemeris(); await calc.calculate({...})');
+    console.log('🔧 Utilities available:');
+    console.log('  SwissEphemerisUtils.checkStatus() - Check current status');
+    console.log('  SwissEphemerisUtils.preloadModule() - Preload for faster calculations');
+    console.log('  SwissEphemerisUtils.calculateWithPreloaded({...}) - Use preloaded instance');
+    console.log('  SwissEphemerisUtils.unloadGlobalCalculator() - Free preloaded memory');
+    console.log('  SwissEphemerisUtils.benchmarkMemory() - Performance comparison');
+
     $("#btnCalculate").on("click", function () {
         var jsonError = validateInput();
         if (jsonError.error === true) {
@@ -219,33 +331,70 @@ $(document).ready(function () {
             }
         }
 
-        var astrologer = new Worker("js/sweph.js");
-        astrologer.postMessage([
-            iYear, iMonth, iDay, iHour, iMinute, iSecond, 
-            iLonG, iLonM, iLonS, sLonEW, 
-            iLatG, iLatM, iLatS, sLatNS, 
-            sHouse, calculateNodes, nodeMethod, asteroidData
-        ]);
-        astrologer.onmessage = function (response) {
-            console.log(response.data)
-            var jsonResult = JSON.parse(response.data);
+        // Create SwissEphemeris calculator instance
+        const calculator = new SwissEphemeris({
+            workerPath: 'js/sweph-worker.js',
+            autoCleanup: true,
+            memoryOptimized: true
+        });
+
+        // Prepare calculation parameters in the new format
+        const calculationParams = {
+            date: $("#initDate").val(),
+            time: $("#initTime").val(),
+            longitude: {
+                degrees: iLonG,
+                minutes: iLonM,
+                seconds: iLonS,
+                direction: sLonEW
+            },
+            latitude: {
+                degrees: iLatG,
+                minutes: iLatM,
+                seconds: iLatS,
+                direction: sLatNS
+            },
+            houseSystem: sHouse,
+            includeNodes: calculateNodes,
+            nodeMethod: nodeMethod
+        };
+
+        // Add asteroid data if requested
+        if (asteroidData) {
+            console.log('🔍 Preparing asteroid data:', asteroidData);
             
-            // Debug: Log the full result structure
-            console.log('🔍 Full JSON result:', jsonResult);
-            console.log('🔍 Asteroids in result:', jsonResult.asteroids);
-            
-            // Check if there was an error
-            if (jsonResult.error) {
-                const toastLiveExample = document.getElementById("liveToast");
-                const toast = new bootstrap.Toast(toastLiveExample);
-                $("#toastbody").html("Calculation error: " + jsonResult.error_msg);
-                toast.show();
-                return;
+            // Convert the legacy asteroid data format to the new class format
+            if (asteroidData.mode === 'specific') {
+                calculationParams.asteroids = {
+                    mode: 'specific',
+                    selection: asteroidData.list
+                };
+            } else {
+                calculationParams.asteroids = asteroidData;
             }
             
-            var sResult = createResult(jsonResult);
-            $("#resultDiv").html(sResult);
-        };
+            console.log('🔍 Final asteroid params:', calculationParams.asteroids);
+        }
+
+        // Perform calculation using the clean async API
+        calculator.calculateFull(calculationParams)
+            .then(jsonResult => {
+                console.log('🔍 Calculation completed successfully');
+                var sResult = createResult(jsonResult);
+                $("#resultDiv").html(sResult);
+                
+                // Cleanup is handled automatically by the class
+                calculator.destroy(); // Optional: explicitly destroy for immediate cleanup
+            })
+            .catch(error => {
+                console.error('❌ Calculation failed:', error);
+                const toastLiveExample = document.getElementById("liveToast");
+                const toast = new bootstrap.Toast(toastLiveExample);
+                $("#toastbody").html("Calculation error: " + error.message);
+                toast.show();
+                
+                calculator.destroy(); // Cleanup on error
+            });
     });
 
     function initializePopularAsteroids(asteroids) {

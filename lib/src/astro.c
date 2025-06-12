@@ -127,11 +127,11 @@
 /** @} */
 
 /**
- * @brief Zodiac sign abbreviations
+ * @brief Zodiac sign full names
  */
 static const char *zodiac_signs[] = {
-    "ar", "ta", "ge", "cn", "le", "vi",
-    "li", "sc", "sa", "cp", "aq", "pi"
+    "Aries", "Taurus", "Gemini", "Cancer", "Leo", "Virgo",
+    "Libra", "Scorpio", "Sagittarius", "Capricorn", "Aquarius", "Pisces"
 };
 
 /**

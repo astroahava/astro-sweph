@@ -39,8 +39,9 @@ WASM_FLAGS_EMBEDDED = $(WASM_FLAGS_BASE) \
 	-s FORCE_FILESYSTEM=1 \
 	-s SINGLE_FILE=1 \
 	-s WASM_ASYNC_COMPILATION=0 \
-	-s ALLOW_MEMORY_GROWTH=0 \
-	-s INITIAL_MEMORY=67108864 \
+	-s ALLOW_MEMORY_GROWTH=1 \
+	-s INITIAL_MEMORY=16777216 \
+	-s MAXIMUM_MEMORY=134217728 \
 	-s STACK_SIZE=1048576 \
 	-s NO_EXIT_RUNTIME=1 \
 	-s ASSERTIONS=0 \
@@ -85,24 +86,25 @@ libswe-release.a: $(SWEPHDIR)/*.c $(SWEPHDIR)/*.h
 	$(MAKE) -C $(SWEPHDIR) libswe.a CC="$(CC)" CFLAGS="$(CFLAGS_RELEASE)"
 	cp $(SWEPHDIR)/libswe.a $@
 
-# Single-file embedded build (RECOMMENDED)
-# Creates a standalone JavaScript file with all ephemeris data embedded
-# Optimized for production deployment with maximum compression
+# Single-file webapp build (RECOMMENDED)
+# Creates one optimized file with embedded ephemeris data and memory-efficient lazy loading
+# Swiss Ephemeris handles internal lazy loading of ephemeris files as needed
 embedded: astro-embedded.js
 
 astro-embedded.js: astro-release.o libswe-release.a $(EPHEMERIS_FILES)
-	@echo "Building ultra-compressed single-file WebAssembly module..."
+	@echo "Building single-file webapp-optimized WebAssembly module..."
 	@echo "📊 Ephemeris files: $(words $(EPHEMERIS_FILES))"
 	@echo "📊 Total ephemeris size: $$(du -sh $(EPHDIR) | cut -f1)"
-	@echo "🔨 Embedding data and optimizing..."
+	@echo "🔨 Embedding data with memory-efficient lazy loading..."
 	$(CC) $(CFLAGS_RELEASE) astro-release.o \
 		$(EMBED_FLAGS) \
 		-o $@ \
 		$(WASM_FLAGS_EMBEDDED) \
 		-L. -lswe-release $(LIBS)
-	@echo "✅ Single-file build complete:"
+	@echo "✅ Single-file webapp build complete:"
 	@echo "   📁 File: $@ ($$(du -sh $@ | cut -f1))"
-	@echo "   🚀 Ready for deployment (no additional files needed)"
+	@echo "   🚀 One file deployment with internal lazy loading"
+	@echo "   💡 Swiss Ephemeris loads ephemeris data on-demand from virtual filesystem"
 
 # Development build (for testing and debugging)
 # Creates separate .js/.wasm/.data files for easier debugging
@@ -121,11 +123,11 @@ astro-dev.js: astro.o libswe.a $(EPHEMERIS_FILES)
 
 # Install to target directory
 install: embedded
-	@echo "📦 Installing to $(JSDIR)/"
+	@echo "📦 Installing single-file webapp build to $(JSDIR)/"
 	@mkdir -p $(JSDIR)
 	cp astro-embedded.js $(JSDIR)/
 	@echo "✅ Installed: $(JSDIR)/astro-embedded.js ($$(du -sh $(JSDIR)/astro-embedded.js | cut -f1))"
-	@echo "🌐 Ready for web deployment"
+	@echo "🌐 Ready for web deployment (single file with internal lazy loading)"
 
 # Development install (useful for testing)
 install-dev: development
@@ -160,9 +162,9 @@ info:
 	@echo "   Target directory: $(JSDIR)/"
 	@echo ""
 	@echo "🎯 Available Targets:"
-	@echo "   embedded    - Single-file production build (RECOMMENDED)"
+	@echo "   embedded    - Single-file webapp build (RECOMMENDED)"
 	@echo "   development - Multi-file debug build"
-	@echo "   install     - Install embedded build to $(JSDIR)/"
+	@echo "   install     - Install single-file build to $(JSDIR)/"
 	@echo "   install-dev - Install development build to $(JSDIR)/"
 	@echo "   verify      - Verify build integrity"
 	@echo "   clean       - Remove all build artifacts"
